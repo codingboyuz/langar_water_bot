@@ -1,0 +1,181 @@
+{% extends "base.html" %}
+{% set c = d.courier %}
+{% block title %}{{ c.name }}{% endblock %}
+{% block subtitle %}Kuryer profili va ish ko'rsatkichlari{% endblock %}
+{% block content %}
+
+<a href="/couriers" class="inline-flex items-center gap-1.5 text-[13px] text-ink-500 hover:text-brand-600 mb-4 stagger">
+  <svg class="ico" style="width:15px;height:15px"><use href="#i-logout"/></svg> Kuryerlar ro'yxatiga qaytish
+</a>
+
+<div class="grid lg:grid-cols-3 gap-4">
+
+  <!-- Profil + Telegram -->
+  <div class="card stagger p-5 h-fit">
+    <div class="flex items-center gap-3 mb-4">
+      <span class="w-14 h-14 rounded-xl bg-brand-600 text-white flex items-center justify-center text-xl font-semibold">
+        {{ c.name[0]|upper }}
+      </span>
+      <div>
+        <div class="font-semibold text-[16px] text-ink-900">{{ c.name }}</div>
+        <div class="text-[12px] mt-0.5">
+          {% if c.is_active %}<span class="text-emerald-600">● Faol</span>{% else %}<span class="text-ink-400">● Nofaol</span>{% endif %}
+        </div>
+      </div>
+    </div>
+
+    <dl class="text-[13px] space-y-2.5">
+      <div class="flex justify-between gap-3">
+        <dt class="text-ink-500">Telefon</dt><dd class="text-ink-900 font-medium">{{ c.phone }}</dd>
+      </div>
+      <div class="flex justify-between gap-3">
+        <dt class="text-ink-500">Hudud</dt><dd class="text-ink-900">{{ c.region }}</dd>
+      </div>
+      <div class="flex justify-between gap-3">
+        <dt class="text-ink-500">Til</dt><dd class="text-ink-900 uppercase">{{ c.lang }}</dd>
+      </div>
+      <div class="flex justify-between gap-3">
+        <dt class="text-ink-500">Qo'shilgan</dt><dd class="text-ink-700">{{ c.created_at|date }}</dd>
+      </div>
+    </dl>
+
+    <!-- Telegram ma'lumotlari (avtomatik) -->
+    <div class="mt-4 pt-4 border-t border-[var(--line)]">
+      <div class="text-[11px] uppercase tracking-wide text-ink-400 font-semibold mb-2">Telegram</div>
+      {% if c.telegram_id %}
+        <dl class="text-[13px] space-y-2">
+          <div class="flex justify-between gap-3">
+            <dt class="text-ink-500">ID</dt>
+            <dd class="text-emerald-600 font-medium tabular-nums">{{ c.telegram_id }}</dd>
+          </div>
+          {% if tg %}
+            {% if tg.username %}
+            <div class="flex justify-between gap-3">
+              <dt class="text-ink-500">Username</dt>
+              <dd><a href="https://t.me/{{ tg.username }}" target="_blank" class="text-brand-600 hover:underline">@{{ tg.username }}</a></dd>
+            </div>
+            {% endif %}
+            {% if tg.first_name or tg.last_name %}
+            <div class="flex justify-between gap-3">
+              <dt class="text-ink-500">Telegram ismi</dt>
+              <dd class="text-ink-900">{{ tg.first_name or '' }} {{ tg.last_name or '' }}</dd>
+            </div>
+            {% endif %}
+            {% if tg.bio %}
+            <div><dt class="text-ink-500 mb-0.5">Bio</dt><dd class="text-ink-700">{{ tg.bio }}</dd></div>
+            {% endif %}
+          {% else %}
+            <div class="text-[12px] text-ink-400">Profil ma'lumotlari yuklanmadi (offline yoki bot to'xtagan).</div>
+          {% endif %}
+        </dl>
+      {% else %}
+        <div class="text-[12px] text-ink-400 flex items-center gap-1.5">
+          <span class="w-1.5 h-1.5 rounded-full bg-slate-300"></span> Telegram ulanmagan
+        </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- KPI + buyurtmalar -->
+  <div class="lg:col-span-2 space-y-4">
+
+    <!-- KPI kartalar -->
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 stagger">
+      {% set kpis = [
+        ('Bugun yetkazgan', d.bottles_today ~ ' ta', 'i-droplet', 'text-brand-600'),
+        ('Jami yetkazgan', d.bottles ~ ' ta', 'i-package', 'text-ink-900'),
+        ('Bugungi haq', d.salary_today|money ~ " so'm", 'i-wallet', 'text-emerald-600'),
+        ('Jami haq', d.salary|money ~ " so'm", 'i-cash', 'text-ink-900')
+      ] %}
+      {% for label,val,icon,cls in kpis %}
+      <div class="card p-4">
+        <div class="flex items-center gap-1.5 text-ink-400 text-[11px] mb-1.5">
+          <svg class="ico" style="width:13px;height:13px"><use href="#{{ icon }}"/></svg> {{ label }}
+        </div>
+        <div class="font-bold text-[17px] tabular-nums {{ cls }}">{{ val }}</div>
+      </div>
+      {% endfor %}
+    </div>
+
+    <div class="grid sm:grid-cols-3 gap-3 stagger text-[13px]">
+      <div class="card p-4"><div class="text-ink-400 text-[11px] mb-1">Bajarilgan buyurtma</div><div class="font-bold text-[16px] text-ink-900">{{ d.orders_done }}</div></div>
+      <div class="card p-4"><div class="text-ink-400 text-[11px] mb-1">Yig'ilgan pul</div><div class="font-bold text-[16px] text-ink-900 tabular-nums">{{ d.collected|money }} so'm</div></div>
+      <div class="card p-4"><div class="text-ink-400 text-[11px] mb-1">Kutilayotgan buyurtma</div><div class="font-bold text-[16px] text-amber-600">{{ d.pending_count }}</div></div>
+    </div>
+
+    <!-- Bajarilishi kerak (marshrut tartibida) -->
+    <div class="card stagger overflow-hidden">
+      <div class="px-4 py-3.5 border-b border-[var(--line)] flex items-center justify-between">
+        <span class="font-semibold text-[14px] text-ink-900 flex items-center gap-2">
+          <svg class="ico text-amber-500" style="width:16px;height:16px"><use href="#i-truck"/></svg>
+          Bajarilishi kerak — tavsiya etilgan tartib
+        </span>
+        <span class="text-[11px] text-ink-400">🛣 yo'l-yo'lakay = yaqin, birga yetkazsa bo'ladi</span>
+      </div>
+      {% if d.pending %}
+      <div class="divide-y divide-slate-100">
+        {% for o in d.pending %}
+        <div class="flex items-start gap-3 px-4 py-3 text-[13px]">
+          <span class="w-6 h-6 rounded-full bg-brand-50 text-brand-700 flex items-center justify-center text-[12px] font-semibold flex-none mt-0.5">{{ o.seq }}</span>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="font-semibold text-brand-600">#{{ o.id }}</span>
+              <span class="text-ink-900">{{ o.user.full_name if o.user else '—' }}</span>
+              {% if o.enroute %}<span class="inline-flex items-center bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full text-[10.5px] font-medium">🛣 yo'l-yo'lakay</span>{% endif %}
+              {% if o.leg_km is not none %}<span class="text-[11px] text-ink-400">+{{ o.leg_km }} km</span>{% endif %}
+              {% if not o.has_geo %}<span class="text-[11px] text-ink-300">geo yo'q</span>{% endif %}
+            </div>
+            <div class="text-ink-500 text-[12px] mt-0.5 truncate">
+              📍 {{ o.geo_address or (o.user.geo_address if o.user else '') or '—' }}
+              · 💧 {{ o.count }} ta · {{ o.total_price|money }} so'm
+            </div>
+          </div>
+          {% if o.latitude is not none and o.longitude is not none %}
+          <a href="https://maps.google.com/?q={{ o.latitude }},{{ o.longitude }}" target="_blank"
+             class="text-[11px] text-brand-600 hover:underline flex-none mt-0.5">xarita</a>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="px-4 py-10 text-center text-ink-400 text-[13px]">Kutilayotgan buyurtma yo'q</div>
+      {% endif %}
+    </div>
+
+    <!-- Bajarilgan buyurtmalar -->
+    <div class="card stagger overflow-hidden">
+      <div class="px-4 py-3.5 border-b border-[var(--line)] font-semibold text-[14px] text-ink-900 flex items-center gap-2">
+        <svg class="ico text-emerald-500" style="width:16px;height:16px"><use href="#i-check"/></svg>
+        Bajarilgan buyurtmalar
+      </div>
+      <div class="overflow-x-auto">
+      <table class="w-full text-[13px]">
+        <thead>
+          <tr class="bg-slate-50 text-ink-500 text-left border-b border-[var(--line)]">
+            <th class="px-4 py-2.5 font-semibold">#</th>
+            <th class="px-4 py-2.5 font-semibold">Mijoz</th>
+            <th class="px-4 py-2.5 font-semibold">Yetkazgan</th>
+            <th class="px-4 py-2.5 font-semibold">Summa</th>
+            <th class="px-4 py-2.5 font-semibold">Sana</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          {% for o in d.delivered %}
+          <tr class="row-tr hover:bg-slate-50/70">
+            <td class="px-4 py-2.5 font-semibold text-brand-600">#{{ o.id }}</td>
+            <td class="px-4 py-2.5 text-ink-700">{{ o.user.full_name if o.user else '—' }}</td>
+            <td class="px-4 py-2.5 text-ink-900">{{ o.delivered_count }} ta</td>
+            <td class="px-4 py-2.5 tabular-nums text-ink-700">{{ o.total_price|money }} so'm</td>
+            <td class="px-4 py-2.5 text-ink-500">{{ o.delivered_at|dt }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="5" class="px-4 py-10 text-center text-ink-400">Hali yetkazilgan buyurtma yo'q</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      </div>
+    </div>
+
+  </div>
+</div>
+{% endblock %}

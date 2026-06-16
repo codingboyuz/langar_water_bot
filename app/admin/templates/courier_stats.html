@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Kuryer hisob-kitobi{% endblock %}
+{% block subtitle %}Kuryer mijozdan pulni oladi, kun oxirida adminga naqd topshiradi{% endblock %}
+{% block content %}
+
+<div class="flex gap-1.5 mb-4 text-[13px] stagger">
+  {% set periods = [('day','Kunlik'),('week','Haftalik'),('month','Oylik'),('all','Jami')] %}
+  {% for key,label in periods %}
+    <a href="/couriers/stats?period={{ key }}"
+       class="btn px-3.5 py-1.5 rounded-lg border font-medium {{ 'bg-brand-600 text-white border-brand-600 shadow-sm shadow-brand-600/20' if period==key else 'bg-white border-slate-200 text-ink-600 hover:border-brand-400 hover:text-brand-600' }}">{{ label }}</a>
+  {% endfor %}
+</div>
+
+<div class="card stagger overflow-hidden">
+  <div class="overflow-x-auto">
+  <table class="w-full text-[13px]">
+    <thead>
+      <tr class="bg-slate-50 text-ink-500 text-left border-b border-[var(--line)]">
+        <th class="px-4 py-3 font-semibold">Kuryer</th>
+        <th class="px-4 py-3 font-semibold">Hudud</th>
+        <th class="px-4 py-3 font-semibold">Yetkazgan suv</th>
+        <th class="px-4 py-3 font-semibold">Stavka/dona</th>
+        <th class="px-4 py-3 font-semibold">Yig'ilgan pul</th>
+        <th class="px-4 py-3 font-semibold">Kuryer haqi</th>
+        <th class="px-4 py-3 font-semibold">Bonus</th>
+        <th class="px-4 py-3 font-semibold">Adminga topshiradi</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-slate-100">
+      {% for s in stats %}
+      <tr class="row-tr hover:bg-slate-50/70">
+        <td class="px-4 py-3">
+          <a href="/couriers/{{ s.courier_id }}" class="font-medium text-ink-900 hover:text-brand-600 hover:underline">{{ s.name }}</a>
+          <div class="text-[11px] text-ink-400">{{ s.phone }}</div>
+        </td>
+        <td class="px-4 py-3 text-ink-700">{{ s.region }}</td>
+        <td class="px-4 py-3 font-semibold text-ink-900">{{ s.bottles }} ta</td>
+        <td class="px-4 py-3 text-ink-700 tabular-nums">{{ s.rate|money }}</td>
+        <td class="px-4 py-3 text-ink-700 tabular-nums">{{ s.collected|money }}</td>
+        <td class="px-4 py-3 text-brand-600 font-medium tabular-nums">{{ s.salary|money }}</td>
+        <td class="px-4 py-3">{% if s.bonus %}<span class="text-emerald-600 font-medium tabular-nums">+{{ s.bonus|money }}</span>{% else %}<span class="text-ink-300">—</span>{% endif %}</td>
+        <td class="px-4 py-3 font-bold text-ink-900 tabular-nums">{{ s.to_admin|money }} so'm</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="8" class="px-4 py-14 text-center text-ink-400">Ma'lumot yo'q</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endblock %}

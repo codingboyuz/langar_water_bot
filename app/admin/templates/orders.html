@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% block title %}Buyurtmalar{% endblock %}
+{% block subtitle %}Yangi buyurtmani ko'rib chiqing va kuryerga yo'naltiring{% endblock %}
+{% block content %}
+
+<div class="flex items-center justify-between mb-4 stagger">
+  <div class="flex gap-1.5 text-[13px]">
+    {% set tabs = [('all','Hammasi'),('new','Yangi'),('process','Jarayonda'),('delivered','Yetkazilgan')] %}
+    {% for key,label in tabs %}
+      <a href="/orders{{ '' if key=='all' else '?status='+key }}"
+         class="btn px-3.5 py-1.5 rounded-lg border font-medium {{ 'bg-brand-600 text-white border-brand-600 shadow-sm shadow-brand-600/20' if status==key else 'bg-white border-slate-200 text-ink-600 hover:border-brand-400 hover:text-brand-600' }}">
+         {{ label }}</a>
+    {% endfor %}
+  </div>
+  <label class="text-[13px] text-ink-500 flex items-center gap-2 cursor-pointer select-none">
+    <span class="relative flex h-2 w-2">
+      <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+      <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+    </span>
+    <input type="checkbox" id="autoRefresh" checked class="accent-brand-600"> Avto-yangilash
+  </label>
+</div>
+
+<div class="card stagger overflow-hidden">
+  <div class="overflow-x-auto">
+  <table class="w-full text-[13px]">
+    <thead>
+      <tr class="bg-slate-50 text-ink-500 text-left border-b border-[var(--line)]">
+        <th class="px-4 py-3 font-semibold">#</th>
+        <th class="px-4 py-3 font-semibold">Mijoz ID (tel)</th>
+        <th class="px-4 py-3 font-semibold">F.I.Sh.</th>
+        <th class="px-4 py-3 font-semibold">Hudud</th>
+        <th class="px-4 py-3 font-semibold">Suv</th>
+        <th class="px-4 py-3 font-semibold">Summa</th>
+        <th class="px-4 py-3 font-semibold">Sana</th>
+        <th class="px-4 py-3 font-semibold">Holat</th>
+        <th class="px-4 py-3 font-semibold">Kuryer</th>
+      </tr>
+    </thead>
+    <tbody id="ordersBody" class="divide-y divide-slate-100">
+      {% set dots = {'new':'#d97706','process':'#7c3aed','delivered':'#16a34a','canceled':'#94a3b8'} %}
+      {% set badge = {'new':'bg-amber-50 text-amber-700','process':'bg-violet-50 text-violet-700','delivered':'bg-emerald-50 text-emerald-700','canceled':'bg-slate-100 text-slate-500'} %}
+      {% set names = {'new':'Yangi','process':'Jarayonda','delivered':'Yetkazildi','canceled':'Bekor'} %}
+      {% for o in orders %}
+      <tr class="row-tr hover:bg-slate-50/70">
+        <td class="px-4 py-3 font-semibold text-brand-600">#{{ o.id }}</td>
+        <td class="px-4 py-3">
+          <div class="text-ink-900">{{ o.user.phone if o.user else '—' }}</div>
+          {% if o.user and o.user.extra_phone %}<div class="text-[11px] text-ink-400">{{ o.user.extra_phone }}</div>{% endif %}
+        </td>
+        <td class="px-4 py-3 text-ink-700">{{ o.user.full_name if o.user else '—' }}</td>
+        <td class="px-4 py-3 text-ink-700">{{ o.region }}</td>
+        <td class="px-4 py-3 text-ink-700">{{ o.count }} ta</td>
+        <td class="px-4 py-3 font-semibold text-ink-900 tabular-nums">{{ o.total_price|money }}</td>
+        <td class="px-4 py-3 text-ink-500">{{ o.created_at|dt }}</td>
+        <td class="px-4 py-3">
+          <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium {{ badge.get(o.status,'') }}">
+            <span class="w-1.5 h-1.5 rounded-full" style="background:{{ dots.get(o.status,'#94a3b8') }}"></span>{{ names.get(o.status, o.status) }}
+          </span>
+          {% if o.status=='delivered' and o.delivered_count is not none %}
+            <div class="text-[11px] text-ink-400 mt-1">{{ o.delivered_count }} dona · {{ o.empty_returned }} bo'sh qaytdi</div>
+          {% endif %}
+        </td>
+        <td class="px-4 py-3">
+          {% if o.courier %}
+            <div class="text-ink-800">{{ o.courier.name }}</div>
+            <div class="text-[11px] text-ink-400">{{ o.courier.phone }}</div>
+          {% elif o.status=='new' %}
+            <form method="post" action="/assign" class="flex gap-1.5 items-center assign-form">
+              <input type="hidden" name="order_id" value="{{ o.id }}">
+              <select name="courier_id" required class="border border-slate-200 rounded-lg px-2.5 py-1.5 text-[12px] outline-none focus:border-brand-500 bg-white">
+                <option value="" disabled selected>Kuryer tanlang</option>
+                {% for c in couriers %}<option value="{{ c.id }}">{{ c.name }} ({{ c.region }})</option>{% endfor %}
+              </select>
+              <button class="btn flex items-center gap-1 bg-brand-600 hover:bg-brand-700 text-white px-3 py-1.5 rounded-lg text-[12px] font-medium shadow-sm shadow-brand-600/20">
+                <svg class="ico" style="width:13px;height:13px"><use href="#i-send"/></svg> Yuborish
+              </button>
+            </form>
+          {% else %}<span class="text-ink-300">—</span>{% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="9" class="px-4 py-14 text-center text-ink-400">Buyurtmalar topilmadi</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let busy = false;
+// Kuryer tanlash bilan ishlayotganda yangilashni to'xtatamiz (tanlovni buzmaslik uchun)
+function bindForms(){
+  document.querySelectorAll('.assign-form select').forEach(s=>{
+    s.addEventListener('focus', ()=> busy=true);
+    s.addEventListener('change', ()=> busy=true);
+  });
+}
+bindForms();
+
+// Faqat jadval tanasini (tbody) yangilaymiz — sahifa qayta yuklanmaydi.
+let refreshing = false;
+async function refreshOrders(){
+  if(busy || refreshing) return;
+  if(!document.getElementById('autoRefresh').checked) return;
+  refreshing = true;
+  try{
+    const r = await fetch(window.location.href, { headers:{ 'X-Requested-With':'fetch' } });
+    const html = await r.text();
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const fresh = doc.getElementById('ordersBody');
+    const cur = document.getElementById('ordersBody');
+    if(fresh && cur && fresh.innerHTML !== cur.innerHTML){
+      cur.replaceWith(fresh);
+      bindForms();
+      if(window.animateRows) window.animateRows(fresh);  // yangi qatorlar jonli chiqadi
+    }
+  }catch(e){}
+  finally{ refreshing = false; }
+}
+
+// Realtime: SSE hodisasi kelganda darhol yangilaymiz
+window.addEventListener('sse', (e)=>{
+  const ev = e.detail && e.detail.event;
+  if(ev==='order_new' || ev==='order_update') refreshOrders();
+});
+// Zaxira: SSE ishlamasa ham (alohida jarayonlar) sekin interval bilan yangilanadi
+setInterval(refreshOrders, 15000);
+</script>
+{% endblock %}

@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% block title %}Boshqaruv paneli{% endblock %}
+{% block subtitle %}Umumiy ko'rsatkichlar — real vaqtda yangilanadi{% endblock %}
+{% block content %}
+
+<!-- Asosiy ko'rsatkichlar -->
+<div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+  {% set cards = [
+    ('total','Jami buyurtma','i-package','#2563eb','#eff5ff'),
+    ('new','Yangi','i-bolt','#d97706','#fffbeb'),
+    ('process','Jarayonda','i-clock','#7c3aed','#f5f3ff'),
+    ('delivered','Yetkazilgan','i-check','#16a34a','#f0fdf4')
+  ] %}
+  {% for key,label,icon,color,bg in cards %}
+  <a href="/orders{{ '' if key=='total' else '?status='+key }}"
+     class="card card-hover stagger p-5 relative overflow-hidden group">
+    <span class="absolute inset-x-0 top-0 h-1" style="background:{{ color }}"></span>
+    <div class="flex items-start justify-between">
+      <div>
+        <div class="text-ink-500 text-[12.5px] font-medium">{{ label }}</div>
+        <div class="text-[30px] font-extrabold mt-1.5 tracking-tight tabular-nums" data-stat="{{ key }}" data-count="{{ counts[key] }}" style="color:{{ color }}">{{ counts[key] }}</div>
+      </div>
+      <span class="w-11 h-11 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110 group-hover:-rotate-3" style="background:{{ bg }}">
+        <svg class="ico" style="width:21px;height:21px;color:{{ color }}"><use href="#{{ icon }}"/></svg>
+      </span>
+    </div>
+    <div class="mt-3 inline-flex items-center gap-1 text-[11.5px] text-ink-400 font-medium">
+      Batafsil <svg class="ico transition-transform group-hover:translate-x-0.5" style="width:13px;height:13px"><use href="#i-chevron"/></svg>
+    </div>
+  </a>
+  {% endfor %}
+</div>
+
+<!-- Qo'shimcha ko'rsatkichlar -->
+<div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
+  {% set cards2 = [
+    ('clients','Mijozlar','i-users'),
+    ('couriers','Kuryerlar','i-truck'),
+    ('bottles','Yetkazilgan suv','i-droplet'),
+    ('revenue','Tushum, so\'m','i-cash')
+  ] %}
+  {% for key,label,icon in cards2 %}
+  <div class="card stagger p-4 flex items-center gap-3">
+    <span class="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center text-ink-600">
+      <svg class="ico" style="width:18px;height:18px"><use href="#{{ icon }}"/></svg>
+    </span>
+    <div>
+      <div class="text-ink-500 text-[12px] font-medium">{{ label }}</div>
+      <div class="text-[18px] font-bold text-ink-900 tabular-nums" data-stat="{{ key }}"
+           data-count="{{ counts[key] }}" {% if key=='revenue' %}data-money="1"{% endif %}>
+        {{ counts[key]|money if key=='revenue' else counts[key] }}
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- Diagrammalar -->
+<div class="grid lg:grid-cols-3 gap-4">
+  <div class="lg:col-span-2 card stagger p-5">
+    <div class="flex items-center gap-2 mb-4">
+      <svg class="ico text-brand-600" style="width:18px;height:18px"><use href="#i-trend"/></svg>
+      <h2 class="font-semibold text-[15px] text-ink-900">Oxirgi 14 kun — yetkazilgan suv</h2>
+    </div>
+    <canvas id="dayChart" height="108"></canvas>
+  </div>
+  <div class="card stagger p-5">
+    <div class="flex items-center gap-2 mb-4">
+      <svg class="ico text-brand-600" style="width:18px;height:18px"><use href="#i-droplet"/></svg>
+      <h2 class="font-semibold text-[15px] text-ink-900">Hududlar bo'yicha</h2>
+    </div>
+    <canvas id="regionChart" height="180"></canvas>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const fmtMoney = n => (n||0).toLocaleString('ru-RU').replace(/,/g,' ');
+let perDay = {{ per_day|safe }};
+let byRegion = {{ by_region|safe }};
+
+const grad = (ctx) => {
+  const g = ctx.createLinearGradient(0,0,0,240);
+  g.addColorStop(0,'rgba(37,99,235,.28)'); g.addColorStop(1,'rgba(37,99,235,0)');
+  return g;
+};
+const dc = document.getElementById('dayChart').getContext('2d');
+const dayChart = new Chart(dc, {
+  type:'line',
+  data:{ labels:perDay.map(d=>d.date.slice(5)),
+    datasets:[{ label:'Suv (dona)', data:perDay.map(d=>d.bottles),
+      borderColor:'#2563eb', backgroundColor:grad(dc), borderWidth:2.5,
+      fill:true, tension:.4, pointRadius:0, pointHoverRadius:5, pointBackgroundColor:'#2563eb' }] },
+  options:{ animation:{duration:900,easing:'easeOutCubic'},
+    plugins:{legend:{display:false}}, interaction:{mode:'index',intersect:false},
+    scales:{ y:{beginAtZero:true,grid:{color:'#f1f5f9'},border:{display:false}}, x:{grid:{display:false},border:{display:false}} } }
+});
+
+const palette = ['#2563eb','#7c3aed','#d97706','#16a34a','#db2777','#0891b2'];
+const regionChart = new Chart(document.getElementById('regionChart'), {
+  type:'doughnut',
+  data:{ labels:byRegion.map(r=>r.region),
+    datasets:[{ data:byRegion.map(r=>r.count), backgroundColor:palette, borderWidth:2, borderColor:'#fff', hoverOffset:6 }] },
+  options:{ cutout:'62%', animation:{animateRotate:true,duration:900},
+    plugins:{legend:{position:'bottom',labels:{boxWidth:10,boxHeight:10,font:{size:11,family:'Inter'},color:'#475569',padding:12}}} }
+});
+
+async function refresh(){
+  try{
+    const r = await fetch('/api/stats'); const j = await r.json();
+    if(j.error) return;
+    document.querySelectorAll('[data-stat]').forEach(el=>{
+      const v = j.counts[el.dataset.stat];
+      el.textContent = el.dataset.money ? fmtMoney(v) : v;
+    });
+    dayChart.data.labels = j.per_day.map(d=>d.date.slice(5));
+    dayChart.data.datasets[0].data = j.per_day.map(d=>d.bottles);
+    dayChart.update();
+    regionChart.data.labels = j.by_region.map(r=>r.region);
+    regionChart.data.datasets[0].data = j.by_region.map(r=>r.count);
+    regionChart.update();
+  }catch(e){}
+}
+// Realtime: SSE hodisasida darhol yangilaymiz
+window.addEventListener('sse', ()=> refresh());
+// Zaxira: SSE ishlamasa ham sekin interval bilan yangilanadi
+setInterval(refresh, 15000);
+</script>
+{% endblock %}

@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}Mijozlar va bonuslar{% endblock %}
+{% block subtitle %}Faol mijozlar reytingi va bonus eslatmalari{% endblock %}
+{% block content %}
+
+<!-- Bonus eslatmalari -->
+{% if bonuses %}
+<div class="card stagger overflow-hidden mb-4 border-amber-200">
+  <div class="bg-amber-50 px-4 py-3 flex items-center gap-2 border-b border-amber-100">
+    <span class="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center text-amber-600">
+      <svg class="ico" style="width:16px;height:16px"><use href="#i-gift"/></svg>
+    </span>
+    <h2 class="font-semibold text-[14px] text-amber-900">Bonus eslatmalari — promokod berish kerak</h2>
+  </div>
+  <div class="p-3 space-y-2">
+    {% for b in bonuses %}
+    <div class="flex items-center justify-between bg-white border border-slate-100 rounded-lg px-4 py-2.5 text-[13px]">
+      <div class="text-ink-700">
+        <span class="font-medium text-ink-900">{{ b.user.full_name }}</span>
+        <span class="text-ink-400">({{ b.user.phone }})</span>
+        — {{ b.threshold }} ta suvga yetdi · kod:
+        <code class="bg-slate-100 px-1.5 py-0.5 rounded text-brand-600 font-medium">{{ b.code }}</code>
+      </div>
+      <form method="post" action="/bonus/sent">
+        <input type="hidden" name="bonus_id" value="{{ b.id }}">
+        <button class="btn inline-flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-[12px] font-medium">
+          <svg class="ico" style="width:13px;height:13px"><use href="#i-check"/></svg> Berildi
+        </button>
+      </form>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<!-- Mijozlar reytingi -->
+<div class="card stagger overflow-hidden">
+  <div class="px-4 py-3.5 border-b border-[var(--line)] flex items-center gap-2">
+    <svg class="ico text-brand-600" style="width:17px;height:17px"><use href="#i-trend"/></svg>
+    <span class="font-semibold text-[14px] text-ink-900">Faol mijozlar reytingi</span>
+  </div>
+  <div class="overflow-x-auto">
+  <table class="w-full text-[13px]">
+    <thead>
+      <tr class="bg-slate-50 text-ink-500 text-left border-b border-[var(--line)]">
+        <th class="px-4 py-3 font-semibold">#</th>
+        <th class="px-4 py-3 font-semibold">F.I.Sh.</th>
+        <th class="px-4 py-3 font-semibold">ID (tel)</th>
+        <th class="px-4 py-3 font-semibold">Hudud</th>
+        <th class="px-4 py-3 font-semibold">Buyurtmalar</th>
+        <th class="px-4 py-3 font-semibold">Jami suv</th>
+        <th class="px-4 py-3 font-semibold">Bonus</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-slate-100">
+      {% for c in clients %}
+      <tr class="row-tr hover:bg-slate-50/70">
+        <td class="px-4 py-3 text-ink-400">{{ loop.index }}</td>
+        <td class="px-4 py-3 font-medium text-ink-900">{{ c.name }}</td>
+        <td class="px-4 py-3 text-ink-700">{{ c.phone }}</td>
+        <td class="px-4 py-3 text-ink-700">{{ c.region }}</td>
+        <td class="px-4 py-3 text-ink-700">{{ c.orders }}</td>
+        <td class="px-4 py-3 font-semibold text-ink-900">{{ c.bottles }} ta</td>
+        <td class="px-4 py-3">
+          {% if c.bonus_due %}
+            <span class="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-full text-[11px] font-medium">
+              <svg class="ico" style="width:12px;height:12px"><use href="#i-gift"/></svg> bonusli</span>
+          {% else %}<span class="text-ink-300">—</span>{% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7" class="px-4 py-14 text-center text-ink-400">Mijozlar yo'q</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endblock %}
