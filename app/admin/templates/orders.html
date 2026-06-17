@@ -3,6 +3,27 @@
 {% block subtitle %}Yangi buyurtmani ko'rib chiqing va kuryerga yo'naltiring{% endblock %}
 {% block content %}
 
+{# Kuryerga biriktirish formasi — buyurtma hududidagi faol kuryerlar ro'yxati #}
+{% macro assign_form(o, couriers, label='Yuborish') %}
+  {% set region_couriers = couriers | selectattr('region', 'equalto', o.region) | list %}
+  {% if region_couriers %}
+  <form method="post" action="/assign" class="flex gap-1.5 items-center assign-form">
+    <input type="hidden" name="order_id" value="{{ o.id }}">
+    <select name="courier_id" required class="border border-slate-200 rounded-lg px-2.5 py-1.5 text-[12px] outline-none focus:border-brand-500 bg-white">
+      <option value="" disabled selected>Kuryer tanlang</option>
+      {% for c in region_couriers %}<option value="{{ c.id }}">{{ c.name }} ({{ c.region }})</option>{% endfor %}
+    </select>
+    <button class="btn flex items-center gap-1 bg-brand-600 hover:bg-brand-700 text-white px-3 py-1.5 rounded-lg text-[12px] font-medium shadow-sm shadow-brand-600/20">
+      <svg class="ico" style="width:13px;height:13px"><use href="#i-send"/></svg> {{ label }}
+    </button>
+  </form>
+  {% else %}
+  <span class="inline-flex items-center gap-1.5 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
+    <svg class="ico" style="width:13px;height:13px"><use href="#i-ban"/></svg> {{ o.region }} hududida faol kuryer yo'q
+  </span>
+  {% endif %}
+{% endmacro %}
+
 <div class="flex items-center justify-between mb-4 stagger">
   <div class="flex gap-1.5 text-[13px]">
     {% set tabs = [('all','Hammasi'),('new','Yangi'),('process','Jarayonda'),('delivered','Yetkazilgan')] %}
@@ -38,9 +59,9 @@
       </tr>
     </thead>
     <tbody id="ordersBody" class="divide-y divide-slate-100">
-      {% set dots = {'new':'#d97706','process':'#7c3aed','delivered':'#16a34a','canceled':'#94a3b8'} %}
-      {% set badge = {'new':'bg-amber-50 text-amber-700','process':'bg-violet-50 text-violet-700','delivered':'bg-emerald-50 text-emerald-700','canceled':'bg-slate-100 text-slate-500'} %}
-      {% set names = {'new':'Yangi','process':'Jarayonda','delivered':'Yetkazildi','canceled':'Bekor'} %}
+      {% set dots = {'new':'#d97706','assigned':'#f59e0b','process':'#7c3aed','await_confirm':'#0891b2','delivered':'#16a34a','canceled':'#94a3b8'} %}
+      {% set badge = {'new':'bg-amber-50 text-amber-700','assigned':'bg-orange-50 text-orange-700','process':'bg-violet-50 text-violet-700','await_confirm':'bg-cyan-50 text-cyan-700','delivered':'bg-emerald-50 text-emerald-700','canceled':'bg-slate-100 text-slate-500'} %}
+      {% set names = {'new':'Yangi','assigned':'Kuryer qabul qilmadi','process':'Jarayonda','await_confirm':'Kuryer yetkazdi','delivered':'Yetkazildi','canceled':'Bekor'} %}
       {% for o in orders %}
       <tr class="row-tr hover:bg-slate-50/70">
         <td class="px-4 py-3 font-semibold text-brand-600">#{{ o.id }}</td>
@@ -57,7 +78,7 @@
           <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium {{ badge.get(o.status,'') }}">
             <span class="w-1.5 h-1.5 rounded-full" style="background:{{ dots.get(o.status,'#94a3b8') }}"></span>{{ names.get(o.status, o.status) }}
           </span>
-          {% if o.status=='delivered' and o.delivered_count is not none %}
+          {% if o.status in ['delivered','await_confirm'] and o.delivered_count is not none %}
             <div class="text-[11px] text-ink-400 mt-1">{{ o.delivered_count }} dona · {{ o.empty_returned }} bo'sh qaytdi</div>
           {% endif %}
         </td>
@@ -65,17 +86,16 @@
           {% if o.courier %}
             <div class="text-ink-800">{{ o.courier.name }}</div>
             <div class="text-[11px] text-ink-400">{{ o.courier.phone }}</div>
-          {% elif o.status=='new' %}
-            <form method="post" action="/assign" class="flex gap-1.5 items-center assign-form">
-              <input type="hidden" name="order_id" value="{{ o.id }}">
-              <select name="courier_id" required class="border border-slate-200 rounded-lg px-2.5 py-1.5 text-[12px] outline-none focus:border-brand-500 bg-white">
-                <option value="" disabled selected>Kuryer tanlang</option>
-                {% for c in couriers %}<option value="{{ c.id }}">{{ c.name }} ({{ c.region }})</option>{% endfor %}
-              </select>
-              <button class="btn flex items-center gap-1 bg-brand-600 hover:bg-brand-700 text-white px-3 py-1.5 rounded-lg text-[12px] font-medium shadow-sm shadow-brand-600/20">
-                <svg class="ico" style="width:13px;height:13px"><use href="#i-send"/></svg> Yuborish
-              </button>
-            </form>
+            {% if o.status not in ['delivered','canceled'] %}
+            <details class="mt-1.5 assign-reassign">
+              <summary class="text-[11px] text-brand-600 cursor-pointer hover:underline select-none inline-flex items-center gap-1">
+                <svg class="ico" style="width:11px;height:11px"><use href="#i-truck"/></svg> Boshqa kuryerga
+              </summary>
+              <div class="mt-1.5">{{ assign_form(o, couriers, 'O\'tkazish') }}</div>
+            </details>
+            {% endif %}
+          {% elif o.status in ['new','process'] %}
+            {{ assign_form(o, couriers) }}
           {% else %}<span class="text-ink-300">—</span>{% endif %}
         </td>
       </tr>
@@ -96,6 +116,10 @@ function bindForms(){
   document.querySelectorAll('.assign-form select').forEach(s=>{
     s.addEventListener('focus', ()=> busy=true);
     s.addEventListener('change', ()=> busy=true);
+  });
+  // "Boshqa kuryerga" ochilganda yangilashni to'xtatamiz (ochiq forma yopilib qolmasin)
+  document.querySelectorAll('details.assign-reassign').forEach(d=>{
+    d.addEventListener('toggle', ()=>{ if(d.open) busy=true; });
   });
 }
 bindForms();

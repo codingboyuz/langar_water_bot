@@ -1,12 +1,15 @@
 """Kuryer boti handlerlari (aiogram 3)."""
 from __future__ import annotations
 
+import httpx
 from aiogram import F, Router
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import (
     CallbackQuery,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
     KeyboardButton,
     Message,
     ReplyKeyboardMarkup,
@@ -14,8 +17,8 @@ from aiogram.types import (
 )
 from aiogram.utils.keyboard import ReplyKeyboardBuilder
 
-from app.config import COURIER_PROVINCES
-from app.courier_bot.common import CB_DELIVERED, CB_PROCESS
+from app.config import COURIER_PROVINCES, settings
+from app.courier_bot.common import CB_DELIVERED, CB_PROCESS, client_confirm_keyboard
 from app.db import service as svc
 from app.i18n import DEFAULT_LANG, LANG_BUTTONS, t
 
@@ -148,6 +151,17 @@ async def reg_region(message: Message, state: FSMContext):
 
 # --------------------------- buyurtmani bajarish ---------------------------
 
+def _delivered_kb(order_id: int, lang: str) -> InlineKeyboardMarkup:
+    """Kuryer 'Jarayonda' bosgandan keyin chiqadigan 'Yetkazildi' tugmasi."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(
+                text=t("c_btn_delivered", lang), callback_data=f"{CB_DELIVERED}:{order_id}"
+            )]
+        ]
+    )
+
+
 @router.callback_query(F.data.startswith(f"{CB_PROCESS}:"))
 async def cb_process(call: CallbackQuery):
     order_id = int(call.data.split(":")[1])
@@ -156,8 +170,10 @@ async def cb_process(call: CallbackQuery):
     await svc.set_order_process(order_id)
     await call.answer(t("c_taken", lang))
     if call.message:
+        # "Jarayonda" tugmasi o'rniga endi "Yetkazildi" tugmasi chiqadi
         await call.message.edit_text(
-            (call.message.text or "") + "\n\n" + t("c_status_process", lang)
+            (call.message.text or "") + "\n\n" + t("c_status_process", lang),
+            reply_markup=_delivered_kb(order_id, lang),
         )
 
 
@@ -168,6 +184,12 @@ async def cb_delivered(call: CallbackQuery, state: FSMContext):
     lang = courier.lang if courier and courier.lang else DEFAULT_LANG
     order = await svc.get_order(order_id)
     await call.answer()
+    # Tugmani olib tashlaymiz — qayta bosib bo'lmasin (ma'lumot kiritish boshlandi)
+    if call.message:
+        try:
+            await call.message.edit_reply_markup(reply_markup=None)
+        except Exception:
+            pass
     await state.update_data(order_id=order_id, lang=lang)
     default = order.count if order else ""
     await call.message.answer(t("c_ask_delivered_count", lang).format(default=default))
@@ -218,6 +240,34 @@ async def deliver_left(message: Message, state: FSMContext):
                 er=order.empty_returned,
                 el=order.empty_left,
             )
+            + "\n\n"
+            + t("c_status_delivered_wait", lang)
         )
+        # Mijozga tasdiqlash tugmasini yuboramiz (mijoz boti orqali)
+        if order.user and order.user.telegram_id:
+            await _notify_client_to_confirm(
+                order.user.telegram_id, order.id, order.user.lang or DEFAULT_LANG
+            )
     else:
         await message.answer(t("c_order_not_found", lang))
+
+
+async def _notify_client_to_confirm(chat_id: int, order_id: int, lang: str) -> bool:
+    """Mijoz botiga «Buyurtmani qabul qildim» tugmali xabar yuboradi.
+
+    Kuryer va mijoz botlari alohida tokenlar — shu sabab Telegram Bot API ga
+    to'g'ridan-to'g'ri (httpx) murojaat qilamiz.
+    """
+    url = f"https://api.telegram.org/bot{settings.client_bot_token}/sendMessage"
+    payload = {
+        "chat_id": chat_id,
+        "text": t("client_delivered_confirm", lang).format(order_id=order_id),
+        "parse_mode": "HTML",
+        "reply_markup": client_confirm_keyboard(order_id, lang),
+    }
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            r = await client.post(url, json=payload)
+            return r.status_code == 200 and r.json().get("ok", False)
+    except Exception:
+        return False

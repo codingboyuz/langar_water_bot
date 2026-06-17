@@ -11,6 +11,8 @@ from app.utils import money
 # callback_data formati: "<action>:<order_id>"
 CB_PROCESS = "process"
 CB_DELIVERED = "delivered"
+# Mijoz boti: yetkazilgan buyurtmani qabul qilganini tasdiqlash
+CB_CLIENT_CONFIRM = "confirm_order"
 
 
 def order_caption(order, user, lang: str = "uz") -> str:
@@ -44,13 +46,27 @@ def order_caption(order, user, lang: str = "uz") -> str:
     return "\n".join(lines)
 
 
-def order_keyboard(order_id: int, lang: str = "uz") -> dict:
-    """Telegram Bot API uchun inline keyboard (raw dict — admin httpx bilan yuboradi)."""
+def order_keyboard(order_id: int, lang: str = "uz", stage: str = "assigned") -> dict | None:
+    """Telegram Bot API uchun inline keyboard (raw dict — admin httpx bilan yuboradi).
+
+    Bosqichma-bosqich tugma chiqadi:
+      - stage='assigned' (yangi biriktirilgan) -> faqat "Jarayonda"
+      - stage='process'  (kuryer qabul qilgan) -> faqat "Yetkazildi"
+      - aks holda tugma yo'q
+    """
+    if stage == "assigned":
+        buttons = [{"text": t("c_btn_process", lang), "callback_data": f"{CB_PROCESS}:{order_id}"}]
+    elif stage == "process":
+        buttons = [{"text": t("c_btn_delivered", lang), "callback_data": f"{CB_DELIVERED}:{order_id}"}]
+    else:
+        return None
+    return {"inline_keyboard": [buttons]}
+
+
+def client_confirm_keyboard(order_id: int, lang: str = "uz") -> dict:
+    """Mijozga: kuryer yetkazgach «Buyurtmani qabul qildim» tugmasi (raw dict)."""
     return {
         "inline_keyboard": [
-            [
-                {"text": t("c_btn_process", lang), "callback_data": f"{CB_PROCESS}:{order_id}"},
-                {"text": t("c_btn_delivered", lang), "callback_data": f"{CB_DELIVERED}:{order_id}"},
-            ]
+            [{"text": t("btn_client_received", lang), "callback_data": f"{CB_CLIENT_CONFIRM}:{order_id}"}]
         ]
     }

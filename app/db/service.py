@@ -18,6 +18,12 @@ from app.db.models import Admin, AppSetting, BonusPromo, Courier, Order, Pricing
 from app.security import verify_password
 from app.utils import now
 
+# Buyurtma "jarayonda" deb hisoblanadigan holatlar (yangi va yakunlangan oralig'i):
+#   assigned      — kuryerga biriktirildi, lekin kuryer hali qabul qilmadi
+#   process       — kuryer "Jarayonda" tugmasini bosdi (qabul qildi)
+#   await_confirm — kuryer "Yetkazildi" bosdi, mijoz tasdig'i kutilmoqda
+ACTIVE_STATUSES = ("assigned", "process", "await_confirm")
+
 
 # ============================ MIJOZ (USER) ============================
 
@@ -114,7 +120,10 @@ async def list_orders(status: str | None = None) -> Sequence[Order]:
             .options(selectinload(Order.user), selectinload(Order.courier))
             .order_by(Order.created_at.desc())
         )
-        if status:
+        if status == "process":
+            # "Jarayonda" — yangi va yakunlangan oralig'idagi barcha holatlar
+            stmt = stmt.where(Order.status.in_(ACTIVE_STATUSES))
+        elif status:
             stmt = stmt.where(Order.status == status)
         res = await s.execute(stmt)
         return res.scalars().all()
@@ -131,16 +140,20 @@ async def get_order(order_id: int) -> Order | None:
 
 
 async def assign_order(order_id: int, courier_id: int) -> Order | None:
-    """Adminga: buyurtmani kuryerga biriktiradi -> status 'process'."""
+    """Adminga: buyurtmani kuryerga biriktiradi -> status 'assigned'.
+
+    Kuryer "Jarayonda" tugmasini bosmaguncha holat 'assigned' (qabul qilinmagan)
+    bo'lib turadi.
+    """
     async with SessionLocal() as s:
         order = await s.get(Order, order_id)
         if not order:
             return None
         order.courier_id = courier_id
-        order.status = "process"
+        order.status = "assigned"
         order.assigned_at = now()
         await s.commit()
-    events.publish("order_update", {"order_id": order_id, "status": "process"})
+    events.publish("order_update", {"order_id": order_id, "status": "assigned"})
     return await get_order(order_id)
 
 
@@ -157,12 +170,16 @@ async def set_order_process(order_id: int) -> None:
 async def mark_delivered(
     order_id: int, delivered_count: int, empty_returned: int, empty_left: int
 ) -> Order | None:
-    """Kuryer 'Yetkazildi' — suv/bo'sh baklashka hisobini yozadi."""
+    """Kuryer 'Yetkazildi' — suv/bo'sh baklashka hisobini yozadi.
+
+    Holat 'await_confirm' bo'ladi: kuryer yetkazdi, ammo buyurtma mijoz
+    tasdiqlamaguncha yakunlanmaydi (statistikaga 'delivered' bo'lib o'tmaydi).
+    """
     async with SessionLocal() as s:
         order = await s.get(Order, order_id)
         if not order:
             return None
-        order.status = "delivered"
+        order.status = "await_confirm"
         order.delivered_count = delivered_count
         order.empty_returned = empty_returned
         order.empty_left = empty_left
@@ -172,6 +189,24 @@ async def mark_delivered(
         if user:
             # mijozda qolgan bo'sh baklashka miqdorini yangilaymiz
             user.empty_bottles = empty_left
+        await s.commit()
+    events.publish("order_update", {"order_id": order_id, "status": "await_confirm"})
+    return await get_order(order_id)
+
+
+async def confirm_received(order_id: int) -> Order | None:
+    """Mijoz 'Buyurtmani qabul qildim' tugmasini bosadi -> buyurtma yakunlanadi.
+
+    Holat 'delivered' bo'ladi va shu paytdan boshlab statistikaga (tushum,
+    suv, kuryer haqi, bonus) hisobga olinadi.
+    """
+    async with SessionLocal() as s:
+        order = await s.get(Order, order_id)
+        if not order or order.status == "delivered":
+            return None
+        order.status = "delivered"
+        if order.delivered_at is None:
+            order.delivered_at = now()
         await s.commit()
     await _check_client_bonus(order_id)
     events.publish("order_update", {"order_id": order_id, "status": "delivered"})
@@ -353,10 +388,30 @@ async def register_courier(
         return c
 
 
-async def delete_courier(courier_id: int) -> None:
+async def set_courier_active(courier_id: int, active: bool) -> None:
+    """Kuryerni vaqtinchalik chetlashtirish / qayta faollashtirish.
+
+    `is_active=False` bo'lsa kuryer buyurtma biriktirish ro'yxatida ko'rinmaydi,
+    lekin hisob-kitob ma'lumotlari saqlanib qoladi.
+    """
     async with SessionLocal() as s:
         c = await s.get(Courier, courier_id)
         if c:
+            c.is_active = active
+            await s.commit()
+
+
+async def delete_courier(courier_id: int) -> None:
+    """Kuryerni butunlay o'chiradi. Bog'liq buyurtmalardagi courier_id NULL bo'ladi."""
+    async with SessionLocal() as s:
+        c = await s.get(Courier, courier_id)
+        if c:
+            # bog'liq buyurtmalarni 'egasiz' qoldiramiz (FK NULL) — tarix o'chmaydi
+            await s.execute(
+                Order.__table__.update()
+                .where(Order.courier_id == courier_id)
+                .values(courier_id=None)
+            )
             await s.delete(c)
             await s.commit()
 
@@ -370,7 +425,9 @@ async def dashboard_counts() -> dict:
 
         total = await count(select(func.count(Order.id)))
         new = await count(select(func.count(Order.id)).where(Order.status == "new"))
-        process = await count(select(func.count(Order.id)).where(Order.status == "process"))
+        process = await count(
+            select(func.count(Order.id)).where(Order.status.in_(ACTIVE_STATUSES))
+        )
         delivered = await count(select(func.count(Order.id)).where(Order.status == "delivered"))
         clients = await count(select(func.count(User.id)))
         couriers = await count(select(func.count(Courier.id)))
@@ -407,28 +464,56 @@ async def dashboard_counts() -> dict:
 
 
 async def orders_per_day(days: int = 14) -> list[dict]:
-    """Oxirgi `days` kun bo'yicha yetkazilgan buyurtmalar soni (chart uchun)."""
-    start = (now() - timedelta(days=days)).replace(hour=0, minute=0, second=0, microsecond=0)
+    """Oxirgi `days` kun bo'yicha suv harakati (chart uchun).
+
+    Ikki qator qaytadi:
+      - `delivered`: yetkazilgan suv (yetkazilgan sanasi bo'yicha)
+      - `process`:   jarayondagi suv (buyurtma sanasi bo'yicha)
+    Sanalar uzluksiz — buyurtma bo'lmagan kun ham 0 bilan ko'rinadi.
+    """
+    base = now().replace(hour=0, minute=0, second=0, microsecond=0)
+    start = base - timedelta(days=days - 1)
     async with SessionLocal() as s:
-        res = await s.execute(
+        # yetkazilgan — yetkazilgan sanasi va yetkazilgan dona bo'yicha
+        dres = await s.execute(
             select(
-                func.date(Order.delivered_at).label("d"),
-                func.count(Order.id),
+                func.date(Order.delivered_at),
                 func.coalesce(func.sum(Order.delivered_count), 0),
             )
             .where(Order.status == "delivered", Order.delivered_at >= start)
             .group_by(func.date(Order.delivered_at))
-            .order_by(func.date(Order.delivered_at))
         )
-        rows = res.all()
-    return [{"date": str(r[0]), "orders": int(r[1]), "bottles": int(r[2])} for r in rows]
+        delivered = {str(r[0]): int(r[1]) for r in dres.all()}
+        # jarayonda — buyurtma sanasi va buyurtma dona bo'yicha
+        pres = await s.execute(
+            select(
+                func.date(Order.created_at),
+                func.coalesce(func.sum(Order.count), 0),
+            )
+            .where(Order.status.in_(ACTIVE_STATUSES), Order.created_at >= start)
+            .group_by(func.date(Order.created_at))
+        )
+        process = {str(r[0]): int(r[1]) for r in pres.all()}
+    out: list[dict] = []
+    for i in range(days - 1, -1, -1):
+        day = (base - timedelta(days=i)).date().isoformat()
+        dv = delivered.get(day, 0)
+        pv = process.get(day, 0)
+        out.append({
+            "date": day,
+            "delivered": dv,
+            "process": pv,
+            "bottles": dv,  # orqaga moslik (eski kalit)
+        })
+    return out
 
 
 async def orders_by_region() -> list[dict]:
+    """Hududlar bo'yicha buyurtmalar: yetkazilgan va jarayondagilarni qamrab oladi."""
     async with SessionLocal() as s:
         res = await s.execute(
             select(Order.region, func.count(Order.id))
-            .where(Order.status == "delivered")
+            .where(Order.status.in_(("delivered",) + ACTIVE_STATUSES))
             .group_by(Order.region)
         )
         rows = res.all()
@@ -506,6 +591,7 @@ async def courier_stats(period: str = "all") -> list[dict]:
                 func.coalesce(func.sum(Order.delivered_count), 0).label("bottles"),
                 func.count(Order.id).label("orders"),
                 func.coalesce(func.sum(Order.total_price), 0).label("collected"),
+                Courier.is_active,
             )
             .outerjoin(Order, and_(*join_cond))
             .group_by(Courier.id)
@@ -546,6 +632,7 @@ async def courier_stats(period: str = "all") -> list[dict]:
                 "salary": salary,        # kuryer haqi
                 "bonus": bonus,
                 "to_admin": int(r[6]) - salary - bonus,  # adminga topshiriladigan
+                "is_active": bool(r[7]),
             }
         )
     return out

@@ -60,16 +60,30 @@
   <div class="lg:col-span-2 card stagger p-5">
     <div class="flex items-center gap-2 mb-4">
       <svg class="ico text-brand-600" style="width:18px;height:18px"><use href="#i-trend"/></svg>
-      <h2 class="font-semibold text-[15px] text-ink-900">Oxirgi 14 kun — yetkazilgan suv</h2>
+      <h2 class="font-semibold text-[15px] text-ink-900">Oxirgi 14 kun — suv (yetkazilgan / jarayonda)</h2>
     </div>
-    <canvas id="dayChart" height="108"></canvas>
+    <div class="relative" style="min-height:160px">
+      <canvas id="dayChart" height="108"></canvas>
+      <div id="dayEmpty" class="hidden absolute inset-0 flex flex-col items-center justify-center text-center gap-1.5 text-ink-400">
+        <svg class="ico" style="width:26px;height:26px"><use href="#i-trend"/></svg>
+        <div class="text-[13px] font-medium text-ink-500">Hali buyurtma yo'q</div>
+        <div class="text-[11.5px]">Buyurtma kelganda bu yerda kunlik statistika chiqadi</div>
+      </div>
+    </div>
   </div>
   <div class="card stagger p-5">
     <div class="flex items-center gap-2 mb-4">
       <svg class="ico text-brand-600" style="width:18px;height:18px"><use href="#i-droplet"/></svg>
       <h2 class="font-semibold text-[15px] text-ink-900">Hududlar bo'yicha</h2>
     </div>
-    <canvas id="regionChart" height="180"></canvas>
+    <div class="relative" style="min-height:200px">
+      <canvas id="regionChart" height="180"></canvas>
+      <div id="regionEmpty" class="hidden absolute inset-0 flex flex-col items-center justify-center text-center gap-1.5 text-ink-400">
+        <svg class="ico" style="width:26px;height:26px"><use href="#i-droplet"/></svg>
+        <div class="text-[13px] font-medium text-ink-500">Ma'lumot yo'q</div>
+        <div class="text-[11.5px]">Yetkazilgan buyurtmalar hududlar bo'yicha taqsimlanadi</div>
+      </div>
+    </div>
   </div>
 </div>
 {% endblock %}
@@ -80,6 +94,14 @@ const fmtMoney = n => (n||0).toLocaleString('ru-RU').replace(/,/g,' ');
 let perDay = {{ per_day|safe }};
 let byRegion = {{ by_region|safe }};
 
+// Ma'lumot bo'lmasa — bo'sh-holat ko'rsatish, bo'lsa grafikni ko'rsatish
+function toggleEmpty(canvasId, emptyId, hasData){
+  const cv = document.getElementById(canvasId);
+  const em = document.getElementById(emptyId);
+  if(cv) cv.style.visibility = hasData ? 'visible' : 'hidden';
+  if(em) em.classList.toggle('hidden', hasData);
+}
+
 const grad = (ctx) => {
   const g = ctx.createLinearGradient(0,0,0,240);
   g.addColorStop(0,'rgba(37,99,235,.28)'); g.addColorStop(1,'rgba(37,99,235,0)');
@@ -89,11 +111,17 @@ const dc = document.getElementById('dayChart').getContext('2d');
 const dayChart = new Chart(dc, {
   type:'line',
   data:{ labels:perDay.map(d=>d.date.slice(5)),
-    datasets:[{ label:'Suv (dona)', data:perDay.map(d=>d.bottles),
-      borderColor:'#2563eb', backgroundColor:grad(dc), borderWidth:2.5,
-      fill:true, tension:.4, pointRadius:0, pointHoverRadius:5, pointBackgroundColor:'#2563eb' }] },
+    datasets:[
+      { label:'Yetkazilgan', data:perDay.map(d=>d.delivered),
+        borderColor:'#2563eb', backgroundColor:grad(dc), borderWidth:2.5,
+        fill:true, tension:.4, pointRadius:0, pointHoverRadius:5, pointBackgroundColor:'#2563eb' },
+      { label:'Jarayonda', data:perDay.map(d=>d.process),
+        borderColor:'#7c3aed', backgroundColor:'rgba(124,58,237,.08)', borderWidth:2.5, borderDash:[5,4],
+        fill:true, tension:.4, pointRadius:0, pointHoverRadius:5, pointBackgroundColor:'#7c3aed' }
+    ] },
   options:{ animation:{duration:900,easing:'easeOutCubic'},
-    plugins:{legend:{display:false}}, interaction:{mode:'index',intersect:false},
+    plugins:{legend:{display:true,position:'top',align:'end',labels:{boxWidth:10,boxHeight:10,usePointStyle:true,font:{size:11,family:'Inter'},color:'#475569',padding:12}}},
+    interaction:{mode:'index',intersect:false},
     scales:{ y:{beginAtZero:true,grid:{color:'#f1f5f9'},border:{display:false}}, x:{grid:{display:false},border:{display:false}} } }
 });
 
@@ -106,6 +134,11 @@ const regionChart = new Chart(document.getElementById('regionChart'), {
     plugins:{legend:{position:'bottom',labels:{boxWidth:10,boxHeight:10,font:{size:11,family:'Inter'},color:'#475569',padding:12}}} }
 });
 
+// Boshlang'ich bo'sh-holat (qiymat bor-yo'qligiga qarab)
+const dayHasData = arr => arr.some(d => (d.delivered||0) + (d.process||0) > 0);
+toggleEmpty('dayChart','dayEmpty', dayHasData(perDay));
+toggleEmpty('regionChart','regionEmpty', byRegion.length>0);
+
 async function refresh(){
   try{
     const r = await fetch('/api/stats'); const j = await r.json();
@@ -115,11 +148,14 @@ async function refresh(){
       el.textContent = el.dataset.money ? fmtMoney(v) : v;
     });
     dayChart.data.labels = j.per_day.map(d=>d.date.slice(5));
-    dayChart.data.datasets[0].data = j.per_day.map(d=>d.bottles);
+    dayChart.data.datasets[0].data = j.per_day.map(d=>d.delivered);
+    dayChart.data.datasets[1].data = j.per_day.map(d=>d.process);
     dayChart.update();
     regionChart.data.labels = j.by_region.map(r=>r.region);
     regionChart.data.datasets[0].data = j.by_region.map(r=>r.count);
     regionChart.update();
+    toggleEmpty('dayChart','dayEmpty', dayHasData(j.per_day));
+    toggleEmpty('regionChart','regionEmpty', j.by_region.length>0);
   }catch(e){}
 }
 // Realtime: SSE hodisasida darhol yangilaymiz

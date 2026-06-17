@@ -16,7 +16,7 @@ from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
 from app import events
-from app.config import REGIONS, settings
+from app.config import settings
 from app.db import service as svc
 from app.db.base import init_db
 from app.admin.notify import send_order_to_courier, send_text_to_client
@@ -159,7 +159,8 @@ async def events_stream(request: Request):
 async def orders(request: Request, status: str | None = None):
     if not _authed(request):
         return _redirect_login()
-    order_list = await svc.list_orders(status if status in {"new", "process", "delivered"} else None)
+    valid_status = {"new", "assigned", "process", "await_confirm", "delivered"}
+    order_list = await svc.list_orders(status if status in valid_status else None)
     couriers = await svc.list_couriers(active_only=True)
     return templates.TemplateResponse(
         request,
@@ -177,57 +178,27 @@ async def orders(request: Request, status: str | None = None):
 async def assign(request: Request, order_id: int = Form(...), courier_id: int = Form(...)):
     if not _authed(request):
         return _redirect_login()
-    order = await svc.assign_order(order_id, courier_id)
+    back = request.headers.get("referer", "/orders")
+    sep = "&" if "?" in back else "?"
+
+    src = await svc.get_order(order_id)
     courier = await svc.get_courier(courier_id)
+    # Hudud mosligi: kuryer faqat o'z hududidagi buyurtmani oladi
+    if not src or not courier or not courier.is_active or courier.region != src.region:
+        return RedirectResponse(f"{back}{sep}assigned=0", status_code=302)
+
+    order = await svc.assign_order(order_id, courier_id)
     sent = False
-    if order and courier and courier.telegram_id:
+    if order and courier.telegram_id:
         sent = await send_order_to_courier(
             courier.telegram_id, order, order.user, getattr(courier, "lang", "uz") or "uz"
         )
-    back = request.headers.get("referer", "/orders")
-    sep = "&" if "?" in back else "?"
     return RedirectResponse(f"{back}{sep}assigned={'1' if sent else '0'}", status_code=302)
 
 
-# --------------------------- couriers ---------------------------
-
-@app.get("/couriers", response_class=HTMLResponse)
-async def couriers(request: Request):
-    if not _authed(request):
-        return _redirect_login()
-    return templates.TemplateResponse(
-        request,
-        "couriers.html",
-        {
-            "page": "couriers",
-            "couriers": await svc.list_couriers(),
-            "regions": REGIONS,
-        },
-    )
-
-
-@app.post("/couriers/add")
-async def couriers_add(
-    request: Request,
-    name: str = Form(...),
-    phone: str = Form(...),
-    region: str = Form(...),
-    telegram_id: str = Form(""),
-):
-    if not _authed(request):
-        return _redirect_login()
-    tg = int(telegram_id) if telegram_id.strip().isdigit() else None
-    await svc.add_courier(name=name, phone=phone, region=region, telegram_id=tg)
-    return RedirectResponse("/couriers", status_code=302)
-
-
-@app.post("/couriers/delete")
-async def couriers_delete(request: Request, courier_id: int = Form(...)):
-    if not _authed(request):
-        return _redirect_login()
-    await svc.delete_courier(courier_id)
-    return RedirectResponse("/couriers", status_code=302)
-
+# --------------------------- couriers (hisob-kitob) ---------------------------
+# Kuryerlar bot orqali ro'yxatdan o'tadi — qo'lda qo'shish/o'chirish bo'limi olib tashlandi.
+# Bu yerda faqat hisob-kitob (stats) va kuryer profili (detail) qoladi.
 
 @app.get("/couriers/stats", response_class=HTMLResponse)
 async def couriers_stats(request: Request, period: str = "day"):
@@ -247,13 +218,33 @@ async def couriers_stats(request: Request, period: str = "day"):
     )
 
 
+@app.post("/couriers/toggle")
+async def couriers_toggle(request: Request, courier_id: int = Form(...), active: int = Form(...)):
+    """Kuryerni vaqtinchalik chetlashtirish (active=0) yoki qayta faollashtirish (active=1)."""
+    if not _authed(request):
+        return _redirect_login()
+    await svc.set_courier_active(courier_id, bool(active))
+    back = request.headers.get("referer", "/couriers/stats")
+    return RedirectResponse(back, status_code=302)
+
+
+@app.post("/couriers/delete")
+async def couriers_delete(request: Request, courier_id: int = Form(...)):
+    """Kuryerni butunlay o'chiradi."""
+    if not _authed(request):
+        return _redirect_login()
+    await svc.delete_courier(courier_id)
+    back = request.headers.get("referer", "/couriers/stats")
+    return RedirectResponse(back, status_code=302)
+
+
 @app.get("/couriers/{courier_id:int}", response_class=HTMLResponse)
 async def courier_detail_page(request: Request, courier_id: int):
     if not _authed(request):
         return _redirect_login()
     detail = await svc.courier_detail(courier_id)
     if not detail:
-        return RedirectResponse("/couriers", status_code=302)
+        return RedirectResponse("/couriers/stats", status_code=302)
     tg = None
     if detail["courier"].telegram_id:
         from app.admin.notify import get_telegram_chat
@@ -261,7 +252,7 @@ async def courier_detail_page(request: Request, courier_id: int):
     return templates.TemplateResponse(
         request,
         "courier_detail.html",
-        {"page": "couriers", "d": detail, "tg": tg},
+        {"page": "courier_stats", "d": detail, "tg": tg},
     )
 
 

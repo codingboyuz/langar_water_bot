@@ -186,9 +186,28 @@ TEXTS: dict[str, dict[str, str]] = {
         "en": "💧 Hello, {name}! Running low on water?\n\n🛒 You can place a new order using the «New order» button.",
     },
     "status_new": {"uz": "🆕 Yangi", "ru": "🆕 Новый", "en": "🆕 New"},
+    "status_assigned": {"uz": "🚚 Kuryerga berildi", "ru": "🚚 Передан курьеру", "en": "🚚 Handed to courier"},
     "status_process": {"uz": "🚚 Jarayonda", "ru": "🚚 В процессе", "en": "🚚 In progress"},
+    "status_await_confirm": {"uz": "📦 Tasdiqlang", "ru": "📦 Подтвердите", "en": "📦 Confirm"},
     "status_delivered": {"uz": "✅ Yetkazildi", "ru": "✅ Доставлен", "en": "✅ Delivered"},
     "status_canceled": {"uz": "🚫 Bekor", "ru": "🚫 Отменён", "en": "🚫 Canceled"},
+
+    # --- Mijozga: kuryer yetkazgandan keyin tasdiqlash ---
+    "client_delivered_confirm": {
+        "uz": "📦 Buyurtmangiz (#{order_id}) yetkazildi.\n\nIltimos, buyurtmani qabul qilganingizni tasdiqlang. 👇",
+        "ru": "📦 Ваш заказ (#{order_id}) доставлен.\n\nПожалуйста, подтвердите получение заказа. 👇",
+        "en": "📦 Your order (#{order_id}) has been delivered.\n\nPlease confirm that you received the order. 👇",
+    },
+    "btn_client_received": {
+        "uz": "✅ Buyurtmani qabul qildim",
+        "ru": "✅ Я получил заказ",
+        "en": "✅ I received the order",
+    },
+    "client_order_completed": {
+        "uz": "🎉 Buyurtma yakunlandi.\n\nBizni tanlaganingiz uchun rahmat! 💧",
+        "ru": "🎉 Заказ завершён.\n\nСпасибо, что выбрали нас! 💧",
+        "en": "🎉 Order completed.\n\nThank you for choosing us! 💧",
+    },
 
     # ============================ KURYER BOTI ============================
     "c_welcome": {
@@ -240,6 +259,11 @@ TEXTS: dict[str, dict[str, str]] = {
         "uz": "🚚 <b>Holat: Jarayonda</b>",
         "ru": "🚚 <b>Статус: В процессе</b>",
         "en": "🚚 <b>Status: In progress</b>",
+    },
+    "c_status_delivered_wait": {
+        "uz": "✅ <b>Holat: Yetkazildi</b>\n⏳ Mijoz tasdiqlashi kutilmoqda.",
+        "ru": "✅ <b>Статус: Доставлено</b>\n⏳ Ожидается подтверждение клиента.",
+        "en": "✅ <b>Status: Delivered</b>\n⏳ Waiting for the client to confirm.",
     },
     "c_ask_delivered_count": {
         "uz": "✅ Yetkazildi.\n\n💧 Nechta suv yetkazdingiz? (masalan: {default})",

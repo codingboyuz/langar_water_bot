@@ -24,13 +24,17 @@
         <th class="px-4 py-3 font-semibold">Kuryer haqi</th>
         <th class="px-4 py-3 font-semibold">Bonus</th>
         <th class="px-4 py-3 font-semibold">Adminga topshiradi</th>
+        <th class="px-4 py-3 font-semibold text-right">Amallar</th>
       </tr>
     </thead>
     <tbody class="divide-y divide-slate-100">
       {% for s in stats %}
-      <tr class="row-tr hover:bg-slate-50/70">
+      <tr class="row-tr hover:bg-slate-50/70 {{ 'opacity-60' if not s.is_active }}">
         <td class="px-4 py-3">
-          <a href="/couriers/{{ s.courier_id }}" class="font-medium text-ink-900 hover:text-brand-600 hover:underline">{{ s.name }}</a>
+          <div class="flex items-center gap-2">
+            <a href="/couriers/{{ s.courier_id }}" class="font-medium text-ink-900 hover:text-brand-600 hover:underline">{{ s.name }}</a>
+            {% if not s.is_active %}<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-50 text-amber-700">Chetlashtirilgan</span>{% endif %}
+          </div>
           <div class="text-[11px] text-ink-400">{{ s.phone }}</div>
         </td>
         <td class="px-4 py-3 text-ink-700">{{ s.region }}</td>
@@ -40,9 +44,36 @@
         <td class="px-4 py-3 text-brand-600 font-medium tabular-nums">{{ s.salary|money }}</td>
         <td class="px-4 py-3">{% if s.bonus %}<span class="text-emerald-600 font-medium tabular-nums">+{{ s.bonus|money }}</span>{% else %}<span class="text-ink-300">—</span>{% endif %}</td>
         <td class="px-4 py-3 font-bold text-ink-900 tabular-nums">{{ s.to_admin|money }} so'm</td>
+        <td class="px-4 py-3">
+          <div class="flex items-center justify-end gap-1.5">
+            {% if s.is_active %}
+            <form method="post" action="/couriers/toggle" onsubmit="return confirm('{{ s.name }} vaqtinchalik chetlashtirilsinmi? U buyurtma biriktirish ro\'yxatida ko\'rinmaydi.')">
+              <input type="hidden" name="courier_id" value="{{ s.courier_id }}">
+              <input type="hidden" name="active" value="0">
+              <button class="btn inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[12px] font-medium border border-amber-200 text-amber-700 bg-amber-50 hover:bg-amber-100" title="Vaqtinchalik chetlashtirish">
+                <svg class="ico" style="width:13px;height:13px"><use href="#i-ban"/></svg> Chetlashtirish
+              </button>
+            </form>
+            {% else %}
+            <form method="post" action="/couriers/toggle" onsubmit="return confirm('{{ s.name }} qayta faollashtirilsinmi?')">
+              <input type="hidden" name="courier_id" value="{{ s.courier_id }}">
+              <input type="hidden" name="active" value="1">
+              <button class="btn inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[12px] font-medium border border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100" title="Qayta faollashtirish">
+                <svg class="ico" style="width:13px;height:13px"><use href="#i-rotate"/></svg> Faollashtirish
+              </button>
+            </form>
+            {% endif %}
+            <form method="post" action="/couriers/delete" onsubmit="return confirm('{{ s.name }} butunlay o\'chirilsinmi? Bu amalni qaytarib bo\'lmaydi (hisob-kitob tarixi ham yo\'qoladi).')">
+              <input type="hidden" name="courier_id" value="{{ s.courier_id }}">
+              <button class="btn inline-flex items-center justify-center w-8 h-8 rounded-lg border border-rose-200 text-rose-600 bg-rose-50 hover:bg-rose-100" title="Butunlay o'chirish">
+                <svg class="ico" style="width:14px;height:14px"><use href="#i-trash"/></svg>
+              </button>
+            </form>
+          </div>
+        </td>
       </tr>
       {% else %}
-      <tr><td colspan="8" class="px-4 py-14 text-center text-ink-400">Ma'lumot yo'q</td></tr>
+      <tr><td colspan="9" class="px-4 py-14 text-center text-ink-400">Ma'lumot yo'q</td></tr>
       {% endfor %}
     </tbody>
   </table>

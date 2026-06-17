@@ -4,11 +4,12 @@ from __future__ import annotations
 from aiogram import F, Router
 from aiogram.filters import CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
-from aiogram.types import Message, ReplyKeyboardRemove
+from aiogram.types import CallbackQuery, Message, ReplyKeyboardRemove
 
 from app.config import REGION_BY_NAME, REGIONS, detect_region
 from app.client_bot import keyboards as kb
 from app.client_bot.states import NewOrder, Register, Settings
+from app.courier_bot.common import CB_CLIENT_CONFIRM
 from app.db import service as svc
 from app.geocode import reverse_geocode
 from app.i18n import (
@@ -304,6 +305,23 @@ async def order_confirm(message: Message, state: FSMContext):
         return
     await state.clear()
     await message.answer(t("order_canceled", lang), reply_markup=kb.main_menu_kb(lang))
+
+
+# --------------------------- Buyurtmani qabul qilganni tasdiqlash ---------------------------
+
+@router.callback_query(F.data.startswith(f"{CB_CLIENT_CONFIRM}:"))
+async def cb_confirm_received(call: CallbackQuery):
+    """Mijoz «Buyurtmani qabul qildim» tugmasini bosadi -> buyurtma yakunlanadi."""
+    order_id = int(call.data.split(":")[1])
+    user = await svc.get_user_by_tg(call.from_user.id)
+    lang = user.lang if user else DEFAULT_LANG
+    await svc.confirm_received(order_id)
+    await call.answer()
+    if call.message:
+        try:
+            await call.message.edit_text(t("client_order_completed", lang))
+        except Exception:
+            await call.message.answer(t("client_order_completed", lang))
 
 
 # --------------------------- Asosiy menyu (holatsiz) ---------------------------
