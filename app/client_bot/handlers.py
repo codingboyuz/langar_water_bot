@@ -6,6 +6,7 @@ from aiogram.filters import CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message, ReplyKeyboardRemove
 
+from app import events
 from app.config import REGION_BY_NAME, REGIONS, detect_region
 from app.client_bot import keyboards as kb
 from app.client_bot.states import NewOrder, Register, Settings
@@ -361,7 +362,13 @@ async def menu_router(message: Message, state: FSMContext):
         await state.set_state(Settings.lang)
 
     else:
-        await message.answer(t("menu_title", lang), reply_markup=kb.main_menu_kb(lang))
+        # Menyu tugmasi emas — adminga (operatorga) chat xabari sifatida yuboramiz
+        await svc.add_chat_message("client", user.id, "in", text)
+        events.publish(
+            "chat_message",
+            {"kind": "client", "party_id": user.id, "name": user.full_name, "preview": text[:80]},
+        )
+        await message.answer(t("client_chat_sent", lang), reply_markup=kb.main_menu_kb(lang))
 
 
 async def _history_text(user, lang: str) -> str:

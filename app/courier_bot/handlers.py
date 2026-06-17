@@ -288,9 +288,9 @@ async def courier_to_admin(message: Message):
         await message.answer(t("c_welcome", DEFAULT_LANG))
         return
     lang = courier.lang or DEFAULT_LANG
-    await svc.add_chat_message(courier.id, "from_courier", message.text)
+    await svc.add_chat_message("courier", courier.id, "in", message.text)
     events.publish(
         "chat_message",
-        {"courier_id": courier.id, "name": courier.name, "preview": message.text[:80]},
+        {"kind": "courier", "party_id": courier.id, "name": courier.name, "preview": message.text[:80]},
     )
     await message.answer(t("c_chat_sent", lang))

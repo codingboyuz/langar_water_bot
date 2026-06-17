@@ -30,11 +30,72 @@ SessionLocal = async_sessionmaker(
 
 async def init_db() -> None:
     """Jadvallarni yaratadi (agar mavjud bo'lmasa) va admin'ni qo'shadi."""
+    await _migrate_chat_pre()      # eski chat sxemasini chetga suramiz
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    await _migrate_chat_post()     # eski yozishmalarni yangi sxemaga ko'chiramiz
     await _ensure_columns()
     await _ensure_pricing()
     await _ensure_admin()
+
+
+async def _chat_columns(conn) -> list[str]:
+    """`chat_messages` jadvali ustunlari (bo'lmasa — bo'sh)."""
+    from sqlalchemy import text
+
+    if conn.dialect.name == "sqlite":
+        res = await conn.execute(text("PRAGMA table_info('chat_messages')"))
+        return [row[1] for row in res.fetchall()]
+    res = await conn.execute(
+        text(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name='chat_messages'"
+        )
+    )
+    return [row[0] for row in res.fetchall()]
+
+
+async def _migrate_chat_pre() -> None:
+    """Eski chat sxemasi (courier_id, to_courier/from_courier) bo'lsa, jadvalni
+    chetga surib qo'yamiz — yangisini create_all toza sxemada yaratadi."""
+    from sqlalchemy import text
+
+    async with engine.begin() as conn:
+        cols = await _chat_columns(conn)
+        if cols and "party_kind" not in cols:
+            await conn.execute(text("ALTER TABLE chat_messages RENAME TO chat_messages_old"))
+
+
+async def _migrate_chat_post() -> None:
+    """Eski yozishmalarni (chat_messages_old) yangi sxemaga ko'chiramiz."""
+    from sqlalchemy import text
+
+    async with engine.begin() as conn:
+        if conn.dialect.name == "sqlite":
+            res = await conn.execute(
+                text("SELECT name FROM sqlite_master WHERE type='table' AND name='chat_messages_old'")
+            )
+        else:
+            res = await conn.execute(
+                text("SELECT 1 FROM information_schema.tables WHERE table_name='chat_messages_old'")
+            )
+        if res.first() is None:
+            return
+        await conn.execute(
+            text(
+                """
+                INSERT INTO chat_messages (id, party_kind, party_id, direction, text, is_read, created_at)
+                SELECT id, 'courier', courier_id,
+                       CASE direction
+                            WHEN 'to_courier'   THEN 'out'
+                            WHEN 'from_courier' THEN 'in'
+                            ELSE direction END,
+                       text, is_read, created_at
+                FROM chat_messages_old
+                """
+            )
+        )
+        await conn.execute(text("DROP TABLE chat_messages_old"))
 
 
 async def _ensure_pricing() -> None:

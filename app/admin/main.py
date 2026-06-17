@@ -256,32 +256,24 @@ async def courier_detail_page(request: Request, courier_id: int):
     )
 
 
-# --------------------------- chat (admin <-> kuryer) ---------------------------
+# --------------------------- chat (admin <-> kuryer/mijoz) ---------------------------
 
-@app.get("/chat", response_class=HTMLResponse)
-async def chat_list(request: Request):
-    if not _authed(request):
-        return _redirect_login()
-    return templates.TemplateResponse(
-        request,
-        "chat_list.html",
-        {"page": "chat", "chats": await svc.chat_overview()},
-    )
+CHAT_KINDS = {"courier", "client"}
 
 
-@app.get("/chat/{courier_id:int}", response_class=HTMLResponse)
-async def chat_detail(request: Request, courier_id: int):
-    if not _authed(request):
-        return _redirect_login()
-    courier = await svc.get_courier(courier_id)
-    if not courier:
-        return RedirectResponse("/chat", status_code=302)
-    # Xabarlar JS orqali /messages endpoint'idan yuklanadi (Telegram uslubi)
-    return templates.TemplateResponse(
-        request,
-        "chat_detail.html",
-        {"page": "chat", "courier": courier},
-    )
+async def _chat_party(kind: str, party_id: int) -> dict | None:
+    """Suhbatdosh ma'lumotini normallashtirib qaytaradi (kuryer yoki mijoz)."""
+    if kind == "courier":
+        c = await svc.get_courier(party_id)
+        if not c:
+            return None
+        return {"id": c.id, "name": c.name, "phone": c.phone, "region": c.region, "tg": c.telegram_id}
+    if kind == "client":
+        u = await svc.get_user_by_id(party_id)
+        if not u:
+            return None
+        return {"id": u.id, "name": u.full_name, "phone": u.phone, "region": u.region, "tg": u.telegram_id}
+    return None
 
 
 def _msg_json(m) -> dict:
@@ -294,30 +286,78 @@ def _msg_json(m) -> dict:
     }
 
 
-@app.get("/chat/{courier_id:int}/messages")
-async def chat_messages_api(request: Request, courier_id: int, after: int = 0):
+@app.get("/chat", response_class=HTMLResponse)
+async def chat_root():
+    return RedirectResponse("/chat/courier", status_code=302)
+
+
+@app.get("/chat/{kind}", response_class=HTMLResponse)
+async def chat_list(request: Request, kind: str):
+    if not _authed(request):
+        return _redirect_login()
+    if kind not in CHAT_KINDS:
+        return RedirectResponse("/chat/courier", status_code=302)
+    return templates.TemplateResponse(
+        request,
+        "chat_list.html",
+        {
+            "page": "chat",
+            "kind": kind,
+            "chats": await svc.chat_overview(kind),
+            "courier_unread": await svc.chat_unread_total("courier"),
+            "client_unread": await svc.chat_unread_total("client"),
+        },
+    )
+
+
+@app.get("/chat/{kind}/{party_id:int}", response_class=HTMLResponse)
+async def chat_detail(request: Request, kind: str, party_id: int):
+    if not _authed(request):
+        return _redirect_login()
+    if kind not in CHAT_KINDS:
+        return RedirectResponse("/chat/courier", status_code=302)
+    party = await _chat_party(kind, party_id)
+    if not party:
+        return RedirectResponse(f"/chat/{kind}", status_code=302)
+    return templates.TemplateResponse(
+        request,
+        "chat_detail.html",
+        {"page": "chat", "kind": kind, "party": party},
+    )
+
+
+@app.get("/chat/{kind}/{party_id:int}/messages")
+async def chat_messages_api(request: Request, kind: str, party_id: int, after: int = 0):
     """`after` id'dan keyingi xabarlar. Yangi xabarlar o'qilgan deb belgilanadi."""
     if not _authed(request):
         return {"error": "unauth"}
-    msgs = await svc.get_chat_messages_after(courier_id, after)
-    if any(m.direction == "from_courier" for m in msgs):
-        await svc.mark_chat_read(courier_id)
+    if kind not in CHAT_KINDS:
+        return {"messages": []}
+    msgs = await svc.get_chat_messages_after(kind, party_id, after)
+    if any(m.direction == "in" for m in msgs):
+        await svc.mark_chat_read(kind, party_id)
     return {"messages": [_msg_json(m) for m in msgs]}
 
 
-@app.post("/chat/{courier_id:int}/send")
-async def chat_send(request: Request, courier_id: int, text: str = Form(...)):
+@app.post("/chat/{kind}/{party_id:int}/send")
+async def chat_send(request: Request, kind: str, party_id: int, text: str = Form(...)):
     if not _authed(request):
         return {"error": "unauth"}
     text = (text or "").strip()
-    courier = await svc.get_courier(courier_id)
-    if not (courier and text):
+    party = await _chat_party(kind, party_id) if kind in CHAT_KINDS else None
+    if not (party and text):
         return {"ok": False}
-    m = await svc.add_chat_message(courier_id, "to_courier", text)
+    m = await svc.add_chat_message(kind, party_id, "out", text)
     delivered = False
-    if courier.telegram_id:
-        delivered = await send_text_to_courier(courier.telegram_id, text)
-    events.publish("chat_message", {"courier_id": courier_id})
+    if party["tg"]:
+        if kind == "courier":
+            delivered = await send_text_to_courier(party["tg"], text)
+        else:
+            delivered = await send_text_to_client(party["tg"], text)
+    events.publish(
+        "chat_message",
+        {"kind": kind, "party_id": party_id, "name": party["name"]},
+    )
     return {"ok": True, "delivered": delivered, "message": _msg_json(m)}
 
 
@@ -325,7 +365,11 @@ async def chat_send(request: Request, courier_id: int, text: str = Form(...)):
 async def api_chat_unread(request: Request):
     if not _authed(request):
         return {"error": "unauth"}
-    return {"unread": await svc.chat_unread_total()}
+    return {
+        "unread": await svc.chat_unread_total(),
+        "courier": await svc.chat_unread_total("courier"),
+        "client": await svc.chat_unread_total("client"),
+    }
 
 
 # --------------------------- narxlar (pricing) ---------------------------

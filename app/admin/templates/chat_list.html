@@ -1,25 +1,38 @@
 {% extends "base.html" %}
 {% block title %}Chat{% endblock %}
-{% block subtitle %}Kuryerlar bilan yozishma — real vaqtda{% endblock %}
+{% block subtitle %}Kuryerlar va mijozlar bilan yozishma — real vaqtda{% endblock %}
 {% block content %}
+
+<!-- Tablar: Kuryerlar / Mijozlar -->
+<div class="flex gap-1.5 text-[13px] mb-4 stagger">
+  {% for k,label in [('courier','Kuryerlar'),('client','Mijozlar')] %}
+  {% set u = courier_unread if k=='courier' else client_unread %}
+  <a href="/chat/{{ k }}"
+     class="btn px-3.5 py-1.5 rounded-lg border font-medium inline-flex items-center gap-1.5
+     {{ 'bg-brand-600 text-white border-brand-600 shadow-sm shadow-brand-600/20' if kind==k else 'bg-white border-slate-200 text-ink-600 hover:border-brand-400 hover:text-brand-600' }}">
+    {{ label }}
+    {% if u %}<span class="min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[10.5px] font-semibold flex items-center justify-center tabular-nums">{{ u }}</span>{% endif %}
+  </a>
+  {% endfor %}
+</div>
 
 <div class="card stagger overflow-hidden">
   <div id="chatList" class="divide-y divide-slate-100">
     {% for it in chats %}
-    {% set c = it.courier %}
-    <a href="/chat/{{ c.id }}" class="flex items-center gap-3 px-4 py-3.5 hover:bg-slate-50/70 row-tr">
-      <span class="w-11 h-11 rounded-xl bg-brand-600 text-white flex items-center justify-center text-[15px] font-semibold flex-none">
-        {{ c.name[0]|upper }}
+    {% set p = it.party %}
+    <a href="/chat/{{ kind }}/{{ p.id }}" class="flex items-center gap-3 px-4 py-3.5 hover:bg-slate-50/70 row-tr">
+      <span class="w-11 h-11 rounded-full {{ 'bg-brand-600' if kind=='courier' else 'bg-violet-600' }} text-white flex items-center justify-center text-[15px] font-semibold flex-none">
+        {{ (p.name or '?')[0]|upper }}
       </span>
       <div class="flex-1 min-w-0">
         <div class="flex items-center gap-2">
-          <span class="font-semibold text-[14px] text-ink-900 truncate">{{ c.name }}</span>
-          <span class="text-[11px] text-ink-400 flex-none">{{ c.region }}</span>
-          {% if not c.telegram_id %}<span class="text-[10.5px] text-amber-600 flex-none">Telegram ulanmagan</span>{% endif %}
+          <span class="font-semibold text-[14px] text-ink-900 truncate">{{ p.name }}</span>
+          <span class="text-[11px] text-ink-400 flex-none">{{ p.region }}</span>
+          {% if not p.tg %}<span class="text-[10.5px] text-amber-600 flex-none">Telegram ulanmagan</span>{% endif %}
         </div>
         <div class="text-[12.5px] text-ink-500 truncate mt-0.5">
           {% if it.last_text %}
-            {% if it.last_dir == 'to_courier' %}<span class="text-ink-400">Siz:</span> {% endif %}{{ it.last_text }}
+            {% if it.last_dir == 'out' %}<span class="text-ink-400">Siz:</span> {% endif %}{{ it.last_text }}
           {% else %}
             <span class="text-ink-300">Hali xabar yo'q</span>
           {% endif %}
@@ -33,7 +46,9 @@
       </div>
     </a>
     {% else %}
-    <div class="px-4 py-14 text-center text-ink-400">Kuryerlar topilmadi</div>
+    <div class="px-4 py-14 text-center text-ink-400">
+      {% if kind=='client' %}Mijozlar bilan hali yozishma yo'q{% else %}Kuryerlar topilmadi{% endif %}
+    </div>
     {% endfor %}
   </div>
 </div>

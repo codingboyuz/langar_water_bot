@@ -208,6 +208,11 @@ TEXTS: dict[str, dict[str, str]] = {
         "ru": "🎉 Заказ завершён.\n\nСпасибо, что выбрали нас! 💧",
         "en": "🎉 Order completed.\n\nThank you for choosing us! 💧",
     },
+    "client_chat_sent": {
+        "uz": "✉️ Xabaringiz operatorga yuborildi. Tez orada javob beramiz.",
+        "ru": "✉️ Ваше сообщение отправлено оператору. Скоро ответим.",
+        "en": "✉️ Your message has been sent to the operator. We'll reply soon.",
+    },
 
     # ============================ KURYER BOTI ============================
     "c_welcome": {

@@ -90,23 +90,22 @@ class Order(Base):
 
 
 class ChatMessage(Base):
-    """Admin <-> kuryer yozishmasi.
+    """Admin <-> kuryer/mijoz yozishmasi (umumiy).
 
-    `direction`:
-      - 'to_courier'   — admin kuryerga yozdi
-      - 'from_courier' — kuryer adminga yozdi
-    `is_read` — admin kuryerdan kelgan xabarni o'qidimi (badge uchun).
+    `party_kind` — suhbatdosh turi: 'courier' (kuryer) yoki 'client' (mijoz).
+    `party_id`   — o'sha kuryer (couriers.id) yoki mijoz (users.id) IDsi.
+    `direction`  — 'out' (admin -> suhbatdosh) yoki 'in' (suhbatdosh -> admin).
+    `is_read`    — admin suhbatdoshdan kelgan xabarni o'qidimi (badge uchun).
     """
     __tablename__ = "chat_messages"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    courier_id: Mapped[int] = mapped_column(ForeignKey("couriers.id"), index=True)
-    direction: Mapped[str] = mapped_column(String(16))
+    party_kind: Mapped[str] = mapped_column(String(16), index=True)
+    party_id: Mapped[int] = mapped_column(Integer, index=True)
+    direction: Mapped[str] = mapped_column(String(8))
     text: Mapped[str] = mapped_column(Text)
     is_read: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now, index=True)
-
-    courier: Mapped["Courier"] = relationship()
 
 
 class Admin(Base):

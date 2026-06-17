@@ -1,6 +1,6 @@
 {% extends "base.html" %}
-{% block title %}{{ courier.name }}{% endblock %}
-{% block subtitle %}{{ courier.phone }} · {{ courier.region }}{% endblock %}
+{% block title %}{{ party.name }}{% endblock %}
+{% block subtitle %}{{ party.phone }} · {{ party.region }}{% endblock %}
 {% block content %}
 
 <style>
@@ -34,22 +34,22 @@
   .tg-composer textarea::-webkit-scrollbar { width:0; }
 </style>
 
-<a href="/chat" class="inline-flex items-center gap-1.5 text-[13px] text-ink-500 hover:text-brand-600 mb-4 stagger">
+<a href="/chat/{{ kind }}" class="inline-flex items-center gap-1.5 text-[13px] text-ink-500 hover:text-brand-600 mb-4 stagger">
   <svg class="ico" style="width:15px;height:15px"><use href="#i-logout"/></svg> Chat ro'yxatiga qaytish
 </a>
 
 <div class="card stagger flex flex-col overflow-hidden" style="height:calc(100vh - 200px);min-height:440px"
-     data-courier-id="{{ courier.id }}">
+     data-kind="{{ kind }}" data-party-id="{{ party.id }}">
 
   <!-- Sarlavha -->
   <div class="px-4 py-2.5 border-b border-[var(--line)] flex items-center gap-3 flex-none bg-white">
-    <span class="w-10 h-10 rounded-full bg-brand-600 text-white flex items-center justify-center text-[14px] font-semibold">
-      {{ courier.name[0]|upper }}
+    <span class="w-10 h-10 rounded-full {{ 'bg-brand-600' if kind=='courier' else 'bg-violet-600' }} text-white flex items-center justify-center text-[14px] font-semibold">
+      {{ (party.name or '?')[0]|upper }}
     </span>
     <div class="min-w-0">
-      <div class="font-semibold text-[14px] text-ink-900 truncate">{{ courier.name }}</div>
-      <div class="text-[11.5px] {{ 'text-emerald-600' if courier.telegram_id else 'text-amber-600' }}">
-        {% if courier.telegram_id %}kuryer · onlayn yetkaziladi{% else %}Telegram ulanmagan — xabar yetib bormaydi{% endif %}
+      <div class="font-semibold text-[14px] text-ink-900 truncate">{{ party.name }}</div>
+      <div class="text-[11.5px] {{ 'text-emerald-600' if party.tg else 'text-amber-600' }}">
+        {% if party.tg %}{{ 'kuryer' if kind=='courier' else 'mijoz' }} · onlayn{% else %}Telegram ulanmagan — xabar yetib bormaydi{% endif %}
       </div>
     </div>
   </div>
@@ -78,7 +78,9 @@
 
 {% block scripts %}
 <script>
-const courierId = document.querySelector('[data-courier-id]').dataset.courierId;
+const root = document.querySelector('[data-party-id]');
+const kind = root.dataset.kind;
+const partyId = root.dataset.partyId;
 const msgBox  = document.getElementById('chatMessages');
 const emptyEl = document.getElementById('chatEmpty');
 const input   = document.getElementById('chatInput');
@@ -117,7 +119,7 @@ function appendMessage(m){
     msgBox.appendChild(sep);
   }
 
-  const out = m.dir === 'to_courier';
+  const out = m.dir === 'out';
   const row = document.createElement('div');
   row.className = 'tg-row ' + (out ? 'justify-end' : 'justify-start');
 
@@ -152,7 +154,7 @@ async function pollMessages(){
   if(loading) return;
   loading = true;
   try{
-    const r = await fetch(`/chat/${courierId}/messages?after=${lastId}`);
+    const r = await fetch(`/chat/${kind}/${partyId}/messages?after=${lastId}`);
     const j = await r.json();
     if(j && j.messages && j.messages.length){
       const stick = nearBottom();
@@ -173,7 +175,7 @@ form.addEventListener('submit', async (e)=>{
   input.value = ''; input.style.height = 'auto';
   try{
     const body = new URLSearchParams({ text });
-    const r = await fetch(`/chat/${courierId}/send`, { method:'POST', body });
+    const r = await fetch(`/chat/${kind}/${partyId}/send`, { method:'POST', body });
     const j = await r.json();
     if(j && j.ok && j.message){
       appendMessage(j.message);
@@ -193,7 +195,7 @@ input.addEventListener('keydown', (e)=>{
 // Kuryerdan kelgan xabar — SSE darhol, qolaversa zaxira interval
 window.addEventListener('sse', (e)=>{
   const d = e.detail;
-  if(d && d.event==='chat_message' && String(d.courier_id)===String(courierId)) pollMessages();
+  if(d && d.event==='chat_message' && d.kind===kind && String(d.party_id)===String(partyId)) pollMessages();
 });
 setInterval(pollMessages, 8000);
 

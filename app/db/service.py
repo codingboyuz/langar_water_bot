@@ -42,6 +42,11 @@ async def get_user_by_tg(telegram_id: int) -> User | None:
         return res.scalar_one_or_none()
 
 
+async def get_user_by_id(user_id: int) -> User | None:
+    async with SessionLocal() as s:
+        return await s.get(User, user_id)
+
+
 async def create_user(data: dict) -> User:
     async with SessionLocal() as s:
         user = User(**data)
@@ -425,20 +430,22 @@ async def delete_courier(courier_id: int) -> None:
             await s.commit()
 
 
-# ============================ CHAT (admin <-> kuryer) ============================
+# ============================ CHAT (admin <-> kuryer/mijoz) ============================
 
-async def add_chat_message(courier_id: int, direction: str, text: str) -> ChatMessage:
+async def add_chat_message(party_kind: str, party_id: int, direction: str, text: str) -> ChatMessage:
     """Yozishma xabarini saqlaydi.
 
-    direction: 'to_courier' (admin yozdi) yoki 'from_courier' (kuryer yozdi).
+    party_kind: 'courier' yoki 'client'.
+    direction:  'out' (admin yozdi) yoki 'in' (suhbatdosh yozdi).
     Adminning o'z xabari darhol 'o'qilgan' deb belgilanadi.
     """
     async with SessionLocal() as s:
         m = ChatMessage(
-            courier_id=courier_id,
+            party_kind=party_kind,
+            party_id=party_id,
             direction=direction,
             text=text,
-            is_read=(direction == "to_courier"),
+            is_read=(direction == "out"),
         )
         s.add(m)
         await s.commit()
@@ -446,43 +453,33 @@ async def add_chat_message(courier_id: int, direction: str, text: str) -> ChatMe
         return m
 
 
-async def get_chat_messages(courier_id: int, limit: int = 300) -> Sequence[ChatMessage]:
-    """Bitta kuryer bilan yozishma (vaqt bo'yicha — eskidan yangiga)."""
-    async with SessionLocal() as s:
-        # oxirgi `limit` ta xabarni olamiz, keyin xronologik tartibga keltiramiz
-        res = await s.execute(
-            select(ChatMessage)
-            .where(ChatMessage.courier_id == courier_id)
-            .order_by(ChatMessage.created_at.desc())
-            .limit(limit)
-        )
-        rows = list(res.scalars().all())
-    rows.reverse()
-    return rows
-
-
 async def get_chat_messages_after(
-    courier_id: int, after_id: int = 0, limit: int = 200
+    party_kind: str, party_id: int, after_id: int = 0, limit: int = 200
 ) -> Sequence[ChatMessage]:
     """`after_id` dan keyingi yangi xabarlar (qo'shimcha yuklash / polling uchun)."""
     async with SessionLocal() as s:
         res = await s.execute(
             select(ChatMessage)
-            .where(ChatMessage.courier_id == courier_id, ChatMessage.id > after_id)
+            .where(
+                ChatMessage.party_kind == party_kind,
+                ChatMessage.party_id == party_id,
+                ChatMessage.id > after_id,
+            )
             .order_by(ChatMessage.id.asc())
             .limit(limit)
         )
         return list(res.scalars().all())
 
 
-async def mark_chat_read(courier_id: int) -> None:
-    """Kuryerdan kelgan o'qilmagan xabarlarni o'qilgan deb belgilaydi."""
+async def mark_chat_read(party_kind: str, party_id: int) -> None:
+    """Suhbatdoshdan kelgan o'qilmagan xabarlarni o'qilgan deb belgilaydi."""
     async with SessionLocal() as s:
         await s.execute(
             ChatMessage.__table__.update()
             .where(
-                ChatMessage.courier_id == courier_id,
-                ChatMessage.direction == "from_courier",
+                ChatMessage.party_kind == party_kind,
+                ChatMessage.party_id == party_id,
+                ChatMessage.direction == "in",
                 ChatMessage.is_read == False,  # noqa: E712
             )
             .values(is_read=True)
@@ -490,52 +487,70 @@ async def mark_chat_read(courier_id: int) -> None:
         await s.commit()
 
 
-async def chat_unread_total() -> int:
-    """Barcha kuryerlardan kelgan o'qilmagan xabarlar soni (sidebar badge)."""
+async def chat_unread_total(party_kind: str | None = None) -> int:
+    """Suhbatdoshlardan kelgan o'qilmagan xabarlar soni (sidebar/tab badge)."""
+    conds = [ChatMessage.direction == "in", ChatMessage.is_read == False]  # noqa: E712
+    if party_kind:
+        conds.append(ChatMessage.party_kind == party_kind)
     async with SessionLocal() as s:
-        res = await s.execute(
-            select(func.count(ChatMessage.id)).where(
-                ChatMessage.direction == "from_courier",
-                ChatMessage.is_read == False,  # noqa: E712
-            )
-        )
+        res = await s.execute(select(func.count(ChatMessage.id)).where(*conds))
         return int(res.scalar_one() or 0)
 
 
-async def chat_overview() -> list[dict]:
-    """Chat ro'yxati: har bir kuryer + oxirgi xabar + o'qilmaganlar soni.
+async def chat_overview(party_kind: str) -> list[dict]:
+    """Chat ro'yxati: har bir suhbatdosh + oxirgi xabar + o'qilmaganlar soni.
 
-    Xabari borlar tepada (oxirgi xabar vaqti bo'yicha), keyin qolganlar.
+    'courier' — barcha kuryerlar; 'client' — faqat yozishmasi bor mijozlar.
+    Xabari borlar tepada (oxirgi xabar vaqti bo'yicha).
     """
     async with SessionLocal() as s:
-        couriers = list((await s.execute(select(Courier).order_by(Courier.name))).scalars().all())
-        # o'qilmaganlar soni (kuryer bo'yicha)
+        # o'qilmaganlar soni (suhbatdosh bo'yicha)
         ures = await s.execute(
-            select(ChatMessage.courier_id, func.count(ChatMessage.id))
+            select(ChatMessage.party_id, func.count(ChatMessage.id))
             .where(
-                ChatMessage.direction == "from_courier",
+                ChatMessage.party_kind == party_kind,
+                ChatMessage.direction == "in",
                 ChatMessage.is_read == False,  # noqa: E712
             )
-            .group_by(ChatMessage.courier_id)
+            .group_by(ChatMessage.party_id)
         )
-        unread = {cid: int(c) for cid, c in ures.all()}
-        # har bir kuryerning oxirgi xabari
+        unread = {pid: int(c) for pid, c in ures.all()}
+        # har bir suhbatdoshning oxirgi xabari
         lres = await s.execute(
-            select(ChatMessage).order_by(ChatMessage.created_at.desc())
+            select(ChatMessage)
+            .where(ChatMessage.party_kind == party_kind)
+            .order_by(ChatMessage.id.desc())
         )
         last_by: dict[int, ChatMessage] = {}
         for m in lres.scalars().all():
-            last_by.setdefault(m.courier_id, m)
+            last_by.setdefault(m.party_id, m)
+
+        if party_kind == "courier":
+            rows = list((await s.execute(select(Courier).order_by(Courier.name))).scalars().all())
+            parties = [
+                {"id": c.id, "name": c.name, "phone": c.phone, "region": c.region, "tg": c.telegram_id}
+                for c in rows
+            ]
+        else:
+            # faqat yozishmasi bor mijozlar (barcha mijozlar ro'yxati juda katta bo'lishi mumkin)
+            ids = list(last_by.keys())
+            users = []
+            if ids:
+                users = list((await s.execute(select(User).where(User.id.in_(ids)))).scalars().all())
+            parties = [
+                {"id": u.id, "name": u.full_name, "phone": u.phone, "region": u.region, "tg": u.telegram_id}
+                for u in users
+            ]
 
     items = []
-    for c in couriers:
-        lm = last_by.get(c.id)
+    for p in parties:
+        lm = last_by.get(p["id"])
         items.append({
-            "courier": c,
+            "party": p,
             "last_text": lm.text if lm else None,
             "last_at": lm.created_at if lm else None,
             "last_dir": lm.direction if lm else None,
-            "unread": unread.get(c.id, 0),
+            "unread": unread.get(p["id"], 0),
         })
     items.sort(key=lambda x: (x["last_at"] is None, -(x["last_at"].timestamp() if x["last_at"] else 0)))
     return items
