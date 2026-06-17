@@ -461,6 +461,20 @@ async def get_chat_messages(courier_id: int, limit: int = 300) -> Sequence[ChatM
     return rows
 
 
+async def get_chat_messages_after(
+    courier_id: int, after_id: int = 0, limit: int = 200
+) -> Sequence[ChatMessage]:
+    """`after_id` dan keyingi yangi xabarlar (qo'shimcha yuklash / polling uchun)."""
+    async with SessionLocal() as s:
+        res = await s.execute(
+            select(ChatMessage)
+            .where(ChatMessage.courier_id == courier_id, ChatMessage.id > after_id)
+            .order_by(ChatMessage.id.asc())
+            .limit(limit)
+        )
+        return list(res.scalars().all())
+
+
 async def mark_chat_read(courier_id: int) -> None:
     """Kuryerdan kelgan o'qilmagan xabarlarni o'qilgan deb belgilaydi."""
     async with SessionLocal() as s:

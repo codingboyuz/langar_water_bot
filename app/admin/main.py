@@ -276,27 +276,49 @@ async def chat_detail(request: Request, courier_id: int):
     courier = await svc.get_courier(courier_id)
     if not courier:
         return RedirectResponse("/chat", status_code=302)
-    messages = await svc.get_chat_messages(courier_id)
-    await svc.mark_chat_read(courier_id)  # ochilganda o'qilgan deb belgilanadi
+    # Xabarlar JS orqali /messages endpoint'idan yuklanadi (Telegram uslubi)
     return templates.TemplateResponse(
         request,
         "chat_detail.html",
-        {"page": "chat", "courier": courier, "messages": messages},
+        {"page": "chat", "courier": courier},
     )
+
+
+def _msg_json(m) -> dict:
+    return {
+        "id": m.id,
+        "dir": m.direction,
+        "text": m.text,
+        "time": m.created_at.strftime("%H:%M"),
+        "day": m.created_at.strftime("%Y-%m-%d"),
+    }
+
+
+@app.get("/chat/{courier_id:int}/messages")
+async def chat_messages_api(request: Request, courier_id: int, after: int = 0):
+    """`after` id'dan keyingi xabarlar. Yangi xabarlar o'qilgan deb belgilanadi."""
+    if not _authed(request):
+        return {"error": "unauth"}
+    msgs = await svc.get_chat_messages_after(courier_id, after)
+    if any(m.direction == "from_courier" for m in msgs):
+        await svc.mark_chat_read(courier_id)
+    return {"messages": [_msg_json(m) for m in msgs]}
 
 
 @app.post("/chat/{courier_id:int}/send")
 async def chat_send(request: Request, courier_id: int, text: str = Form(...)):
     if not _authed(request):
-        return _redirect_login()
+        return {"error": "unauth"}
     text = (text or "").strip()
     courier = await svc.get_courier(courier_id)
-    if courier and text:
-        await svc.add_chat_message(courier_id, "to_courier", text)
-        if courier.telegram_id:
-            await send_text_to_courier(courier.telegram_id, text)
-        events.publish("chat_message", {"courier_id": courier_id})
-    return RedirectResponse(f"/chat/{courier_id}", status_code=302)
+    if not (courier and text):
+        return {"ok": False}
+    m = await svc.add_chat_message(courier_id, "to_courier", text)
+    delivered = False
+    if courier.telegram_id:
+        delivered = await send_text_to_courier(courier.telegram_id, text)
+    events.publish("chat_message", {"courier_id": courier_id})
+    return {"ok": True, "delivered": delivered, "message": _msg_json(m)}
 
 
 @app.get("/api/chat/unread")
