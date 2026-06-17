@@ -55,15 +55,67 @@ async def _chat_columns(conn) -> list[str]:
     return [row[0] for row in res.fetchall()]
 
 
+async def _table_exists(conn, name: str) -> bool:
+    from sqlalchemy import text
+
+    if conn.dialect.name == "sqlite":
+        res = await conn.execute(
+            text("SELECT 1 FROM sqlite_master WHERE type='table' AND name=:n"), {"n": name}
+        )
+    else:
+        res = await conn.execute(
+            text("SELECT 1 FROM information_schema.tables WHERE table_name=:n"), {"n": name}
+        )
+    return res.first() is not None
+
+
+async def _drop_table_indexes(conn, table: str) -> None:
+    """Jadvalga tegishli indekslarni o'chiradi.
+
+    SQLite/Postgres'da jadval RENAME qilinganda indekslar eski nomi bilan
+    ko'chadi — bu yangi jadval indekslari bilan nom to'qnashuviga olib keladi.
+    Shu sabab eski indekslarni bo'shatamiz (nomlar qaytadan ishlatilsin).
+    """
+    from sqlalchemy import text
+
+    if conn.dialect.name == "sqlite":
+        res = await conn.execute(
+            text(
+                "SELECT name FROM sqlite_master WHERE type='index' "
+                "AND tbl_name=:t AND name NOT LIKE 'sqlite_%'"
+            ),
+            {"t": table},
+        )
+        names = [r[0] for r in res.fetchall()]
+    else:
+        res = await conn.execute(
+            text("SELECT indexname FROM pg_indexes WHERE tablename=:t"), {"t": table}
+        )
+        names = [r[0] for r in res.fetchall()]
+    for n in names:
+        try:
+            await conn.execute(text(f'DROP INDEX IF EXISTS "{n}"'))
+        except Exception:
+            pass
+
+
 async def _migrate_chat_pre() -> None:
     """Eski chat sxemasi (courier_id, to_courier/from_courier) bo'lsa, jadvalni
-    chetga surib qo'yamiz — yangisini create_all toza sxemada yaratadi."""
+    chetga surib qo'yamiz — yangisini create_all toza sxemada yaratadi.
+
+    Eski indekslar nomi yangi jadval indekslari bilan to'qnashmasligi uchun
+    chetga surilgan jadval indekslarini o'chiramiz (yarim ko'chgan holatni ham
+    shu yo'l bilan tiklaymiz)."""
     from sqlalchemy import text
 
     async with engine.begin() as conn:
         cols = await _chat_columns(conn)
         if cols and "party_kind" not in cols:
             await conn.execute(text("ALTER TABLE chat_messages RENAME TO chat_messages_old"))
+        # chetga surilgan jadval (yangi yoki avvalgi muvaffaqiyatsiz urinishdan) —
+        # indekslarini bo'shatamiz, aks holda create_all nom to'qnashuvida yiqiladi
+        if await _table_exists(conn, "chat_messages_old"):
+            await _drop_table_indexes(conn, "chat_messages_old")
 
 
 async def _migrate_chat_post() -> None:
@@ -71,20 +123,13 @@ async def _migrate_chat_post() -> None:
     from sqlalchemy import text
 
     async with engine.begin() as conn:
-        if conn.dialect.name == "sqlite":
-            res = await conn.execute(
-                text("SELECT name FROM sqlite_master WHERE type='table' AND name='chat_messages_old'")
-            )
-        else:
-            res = await conn.execute(
-                text("SELECT 1 FROM information_schema.tables WHERE table_name='chat_messages_old'")
-            )
-        if res.first() is None:
+        if not await _table_exists(conn, "chat_messages_old"):
             return
+        insert_kw = "INSERT OR IGNORE" if conn.dialect.name == "sqlite" else "INSERT"
         await conn.execute(
             text(
-                """
-                INSERT INTO chat_messages (id, party_kind, party_id, direction, text, is_read, created_at)
+                f"""
+                {insert_kw} INTO chat_messages (id, party_kind, party_id, direction, text, is_read, created_at)
                 SELECT id, 'courier', courier_id,
                        CASE direction
                             WHEN 'to_courier'   THEN 'out'
