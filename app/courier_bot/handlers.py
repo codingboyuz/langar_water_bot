@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import httpx
 from aiogram import F, Router
-from aiogram.filters import CommandStart
+from aiogram.filters import CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import (
@@ -17,6 +17,7 @@ from aiogram.types import (
 )
 from aiogram.utils.keyboard import ReplyKeyboardBuilder
 
+from app import events
 from app.config import COURIER_PROVINCES, settings
 from app.courier_bot.common import CB_DELIVERED, CB_PROCESS, client_confirm_keyboard
 from app.db import service as svc
@@ -271,3 +272,25 @@ async def _notify_client_to_confirm(chat_id: int, order_id: int, lang: str) -> b
             return r.status_code == 200 and r.json().get("ok", False)
     except Exception:
         return False
+
+
+# --------------------------- admin bilan chat ---------------------------
+
+@router.message(StateFilter(None), F.text)
+async def courier_to_admin(message: Message):
+    """Holatsiz (registratsiya/yetkazish jarayonidan tashqari) yozilgan matn —
+    adminga yuboriladigan chat xabari sifatida saqlanadi."""
+    if message.text.startswith("/"):
+        return  # buyruqlar (masalan /start) chatga yozilmaydi
+    courier = await svc.get_courier_by_tg(message.from_user.id)
+    if not courier:
+        # ro'yxatdan o'tmagan — avval /start
+        await message.answer(t("c_welcome", DEFAULT_LANG))
+        return
+    lang = courier.lang or DEFAULT_LANG
+    await svc.add_chat_message(courier.id, "from_courier", message.text)
+    events.publish(
+        "chat_message",
+        {"courier_id": courier.id, "name": courier.name, "preview": message.text[:80]},
+    )
+    await message.answer(t("c_chat_sent", lang))

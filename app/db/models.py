@@ -89,6 +89,26 @@ class Order(Base):
     courier: Mapped["Courier | None"] = relationship(back_populates="orders")
 
 
+class ChatMessage(Base):
+    """Admin <-> kuryer yozishmasi.
+
+    `direction`:
+      - 'to_courier'   — admin kuryerga yozdi
+      - 'from_courier' — kuryer adminga yozdi
+    `is_read` — admin kuryerdan kelgan xabarni o'qidimi (badge uchun).
+    """
+    __tablename__ = "chat_messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    courier_id: Mapped[int] = mapped_column(ForeignKey("couriers.id"), index=True)
+    direction: Mapped[str] = mapped_column(String(16))
+    text: Mapped[str] = mapped_column(Text)
+    is_read: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now, index=True)
+
+    courier: Mapped["Courier"] = relationship()
+
+
 class Admin(Base):
     __tablename__ = "admins"
 

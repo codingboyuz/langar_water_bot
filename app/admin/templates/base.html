@@ -100,6 +100,7 @@
     <symbol id="i-ban" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/></symbol>
     <symbol id="i-rotate" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></symbol>
     <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+    <symbol id="i-chat" viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></symbol>
   </svg>
 
   <!-- Mobil sidebar fon -->
@@ -122,6 +123,7 @@
         ('dashboard','/dashboard','Boshqaruv paneli','i-grid'),
         ('orders','/orders','Buyurtmalar','i-package'),
         ('courier_stats','/couriers/stats','Kuryer hisobi','i-wallet'),
+        ('chat','/chat','Chat','i-chat'),
         ('clients','/clients','Mijozlar','i-users'),
         ('pricing','/pricing','Narxlar','i-cash')
       ] %}
@@ -129,7 +131,8 @@
         <a href="{{ url }}" style="animation:slideIn .35s ease both;animation-delay:{{ loop.index0 * 45 }}ms"
            class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13.5px] font-medium
            {{ 'active' if page==key else 'text-ink-300' }}">
-          <svg class="ico" style="width:18px;height:18px"><use href="#{{ icon }}"/></svg>{{ label }}</a>
+          <svg class="ico" style="width:18px;height:18px"><use href="#{{ icon }}"/></svg>{{ label }}
+          {% if key=='chat' %}<span id="chatBadge" class="hidden ml-auto min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[10.5px] font-semibold flex items-center justify-center tabular-nums"></span>{% endif %}</a>
       {% endfor %}
     </nav>
 
@@ -260,6 +263,20 @@
       }, 5000);
     }
 
+    // ---- Chat: o'qilmagan xabarlar badge'i ----
+    async function refreshChatBadge(){
+      const badge = document.getElementById('chatBadge');
+      if(!badge) return;
+      try{
+        const r = await fetch('/api/chat/unread');
+        const j = await r.json();
+        const n = (j && j.unread) || 0;
+        badge.textContent = n > 99 ? '99+' : n;
+        badge.classList.toggle('hidden', n === 0);
+      }catch(_){}
+    }
+    document.addEventListener('DOMContentLoaded', refreshChatBadge);
+
     // ---- Realtime SSE ulanishi ----
     (function(){
       if(!window.EventSource) return;
@@ -269,6 +286,10 @@
         if(!d || !d.event) return;
         if(d.event==='order_new'){
           showToast('Yangi buyurtma' + (d.order_id ? ' #'+d.order_id : '') + ' keldi', 'new');
+        }
+        if(d.event==='chat_message'){
+          showToast('💬 Yangi xabar' + (d.name ? ': '+d.name : '') + (d.preview ? ' — '+d.preview : ''), 'new');
+          refreshChatBadge();
         }
         window.dispatchEvent(new CustomEvent('sse', { detail:d }));
       };

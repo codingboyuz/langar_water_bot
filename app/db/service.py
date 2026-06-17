@@ -14,7 +14,16 @@ from sqlalchemy.orm import selectinload
 from app import events
 from app.config import CLIENT_BONUS_STEP, REGION_BY_NAME
 from app.db.base import SessionLocal
-from app.db.models import Admin, AppSetting, BonusPromo, Courier, Order, Pricing, User
+from app.db.models import (
+    Admin,
+    AppSetting,
+    BonusPromo,
+    ChatMessage,
+    Courier,
+    Order,
+    Pricing,
+    User,
+)
 from app.security import verify_password
 from app.utils import now
 
@@ -414,6 +423,108 @@ async def delete_courier(courier_id: int) -> None:
             )
             await s.delete(c)
             await s.commit()
+
+
+# ============================ CHAT (admin <-> kuryer) ============================
+
+async def add_chat_message(courier_id: int, direction: str, text: str) -> ChatMessage:
+    """Yozishma xabarini saqlaydi.
+
+    direction: 'to_courier' (admin yozdi) yoki 'from_courier' (kuryer yozdi).
+    Adminning o'z xabari darhol 'o'qilgan' deb belgilanadi.
+    """
+    async with SessionLocal() as s:
+        m = ChatMessage(
+            courier_id=courier_id,
+            direction=direction,
+            text=text,
+            is_read=(direction == "to_courier"),
+        )
+        s.add(m)
+        await s.commit()
+        await s.refresh(m)
+        return m
+
+
+async def get_chat_messages(courier_id: int, limit: int = 300) -> Sequence[ChatMessage]:
+    """Bitta kuryer bilan yozishma (vaqt bo'yicha — eskidan yangiga)."""
+    async with SessionLocal() as s:
+        # oxirgi `limit` ta xabarni olamiz, keyin xronologik tartibga keltiramiz
+        res = await s.execute(
+            select(ChatMessage)
+            .where(ChatMessage.courier_id == courier_id)
+            .order_by(ChatMessage.created_at.desc())
+            .limit(limit)
+        )
+        rows = list(res.scalars().all())
+    rows.reverse()
+    return rows
+
+
+async def mark_chat_read(courier_id: int) -> None:
+    """Kuryerdan kelgan o'qilmagan xabarlarni o'qilgan deb belgilaydi."""
+    async with SessionLocal() as s:
+        await s.execute(
+            ChatMessage.__table__.update()
+            .where(
+                ChatMessage.courier_id == courier_id,
+                ChatMessage.direction == "from_courier",
+                ChatMessage.is_read == False,  # noqa: E712
+            )
+            .values(is_read=True)
+        )
+        await s.commit()
+
+
+async def chat_unread_total() -> int:
+    """Barcha kuryerlardan kelgan o'qilmagan xabarlar soni (sidebar badge)."""
+    async with SessionLocal() as s:
+        res = await s.execute(
+            select(func.count(ChatMessage.id)).where(
+                ChatMessage.direction == "from_courier",
+                ChatMessage.is_read == False,  # noqa: E712
+            )
+        )
+        return int(res.scalar_one() or 0)
+
+
+async def chat_overview() -> list[dict]:
+    """Chat ro'yxati: har bir kuryer + oxirgi xabar + o'qilmaganlar soni.
+
+    Xabari borlar tepada (oxirgi xabar vaqti bo'yicha), keyin qolganlar.
+    """
+    async with SessionLocal() as s:
+        couriers = list((await s.execute(select(Courier).order_by(Courier.name))).scalars().all())
+        # o'qilmaganlar soni (kuryer bo'yicha)
+        ures = await s.execute(
+            select(ChatMessage.courier_id, func.count(ChatMessage.id))
+            .where(
+                ChatMessage.direction == "from_courier",
+                ChatMessage.is_read == False,  # noqa: E712
+            )
+            .group_by(ChatMessage.courier_id)
+        )
+        unread = {cid: int(c) for cid, c in ures.all()}
+        # har bir kuryerning oxirgi xabari
+        lres = await s.execute(
+            select(ChatMessage).order_by(ChatMessage.created_at.desc())
+        )
+        last_by: dict[int, ChatMessage] = {}
+        for m in lres.scalars().all():
+            last_by.setdefault(m.courier_id, m)
+
+    items = []
+    for c in couriers:
+        lm = last_by.get(c.id)
+        items.append({
+            "courier": c,
+            "last_text": lm.text if lm else None,
+            "last_at": lm.created_at if lm else None,
+            "last_dir": lm.direction if lm else None,
+            "unread": unread.get(c.id, 0),
+        })
+    items.sort(key=lambda x: (x["last_at"] is None, -(x["last_at"].timestamp() if x["last_at"] else 0)))
+    return items
 
 
 # ============================ STATISTIKA ============================

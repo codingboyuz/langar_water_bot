@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}{{ courier.name }}{% endblock %}
+{% block subtitle %}{{ courier.phone }} · {{ courier.region }}{% endblock %}
+{% block content %}
+
+<a href="/chat" class="inline-flex items-center gap-1.5 text-[13px] text-ink-500 hover:text-brand-600 mb-4 stagger">
+  <svg class="ico" style="width:15px;height:15px"><use href="#i-logout"/></svg> Chat ro'yxatiga qaytish
+</a>
+
+<div class="card stagger flex flex-col" style="height:calc(100vh - 220px);min-height:420px"
+     data-courier-id="{{ courier.id }}">
+
+  <!-- Sarlavha -->
+  <div class="px-4 py-3 border-b border-[var(--line)] flex items-center gap-3 flex-none">
+    <span class="w-10 h-10 rounded-xl bg-brand-600 text-white flex items-center justify-center text-[14px] font-semibold">
+      {{ courier.name[0]|upper }}
+    </span>
+    <div class="min-w-0">
+      <div class="font-semibold text-[14px] text-ink-900 truncate">{{ courier.name }}</div>
+      <div class="text-[11.5px] {{ 'text-emerald-600' if courier.telegram_id else 'text-amber-600' }}">
+        {% if courier.telegram_id %}● Telegram ulangan{% else %}● Telegram ulanmagan — xabar yetib bormaydi{% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Xabarlar -->
+  <div id="chatMessages" class="flex-1 overflow-y-auto px-4 py-4 space-y-2.5 bg-slate-50/40">
+    {% for m in messages %}
+      {% if m.direction == 'to_courier' %}
+      <div class="flex justify-end">
+        <div class="max-w-[78%] bg-brand-600 text-white rounded-2xl rounded-br-md px-3.5 py-2 shadow-sm">
+          <div class="text-[13px] whitespace-pre-wrap break-words">{{ m.text }}</div>
+          <div class="text-[10px] text-white/70 text-right mt-0.5">{{ m.created_at|dt }}</div>
+        </div>
+      </div>
+      {% else %}
+      <div class="flex justify-start">
+        <div class="max-w-[78%] bg-white border border-[var(--line)] rounded-2xl rounded-bl-md px-3.5 py-2 shadow-sm">
+          <div class="text-[13px] text-ink-800 whitespace-pre-wrap break-words">{{ m.text }}</div>
+          <div class="text-[10px] text-ink-400 mt-0.5">{{ m.created_at|dt }}</div>
+        </div>
+      </div>
+      {% endif %}
+    {% else %}
+      <div class="h-full flex flex-col items-center justify-center text-center text-ink-400 gap-1.5">
+        <svg class="ico" style="width:30px;height:30px"><use href="#i-chat"/></svg>
+        <div class="text-[13px]">Hali yozishma yo'q</div>
+        <div class="text-[11.5px]">Birinchi xabarni yuboring</div>
+      </div>
+    {% endfor %}
+  </div>
+
+  <!-- Yuborish formasi -->
+  <form id="chatForm" method="post" action="/chat/{{ courier.id }}/send"
+        class="flex items-end gap-2 px-3 py-3 border-t border-[var(--line)] flex-none">
+    <textarea id="chatInput" name="text" rows="1" required maxlength="2000" placeholder="Xabar yozing…"
+      class="flex-1 resize-none border border-slate-200 rounded-xl px-3.5 py-2.5 text-[13.5px] outline-none focus:border-brand-500 max-h-32"></textarea>
+    <button class="btn flex items-center gap-1.5 bg-brand-600 hover:bg-brand-700 text-white px-4 py-2.5 rounded-xl text-[13px] font-medium shadow-sm shadow-brand-600/20 flex-none">
+      <svg class="ico" style="width:15px;height:15px"><use href="#i-send"/></svg> Yuborish
+    </button>
+  </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const courierId = document.querySelector('[data-courier-id]').dataset.courierId;
+const msgBox = document.getElementById('chatMessages');
+const input = document.getElementById('chatInput');
+
+function scrollBottom(){ msgBox.scrollTop = msgBox.scrollHeight; }
+scrollBottom();
+
+// Textarea balandligini moslash + Enter bilan yuborish (Shift+Enter — yangi qator)
+input.addEventListener('input', ()=>{ input.style.height='auto'; input.style.height=Math.min(input.scrollHeight,128)+'px'; });
+input.addEventListener('keydown', (e)=>{
+  if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); if(input.value.trim()) document.getElementById('chatForm').submit(); }
+});
+
+// Yangi xabar kelganda yozishmani jimgina yangilaymiz
+let refreshing = false;
+async function refreshMessages(){
+  if(refreshing) return;
+  refreshing = true;
+  try{
+    const r = await fetch(window.location.href, { headers:{ 'X-Requested-With':'fetch' } });
+    const html = await r.text();
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const fresh = doc.getElementById('chatMessages');
+    if(fresh && fresh.innerHTML !== msgBox.innerHTML){
+      const atBottom = msgBox.scrollHeight - msgBox.scrollTop - msgBox.clientHeight < 60;
+      msgBox.innerHTML = fresh.innerHTML;
+      if(atBottom) scrollBottom();
+    }
+  }catch(e){}
+  finally{ refreshing = false; }
+}
+window.addEventListener('sse', (e)=>{
+  const d = e.detail;
+  if(d && d.event==='chat_message' && String(d.courier_id)===String(courierId)) refreshMessages();
+});
+setInterval(refreshMessages, 12000);
+</script>
+{% endblock %}

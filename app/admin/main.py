@@ -19,7 +19,7 @@ from app import events
 from app.config import settings
 from app.db import service as svc
 from app.db.base import init_db
-from app.admin.notify import send_order_to_courier, send_text_to_client
+from app.admin.notify import send_order_to_courier, send_text_to_client, send_text_to_courier
 from app.utils import fmt_dt, fmt_date, money
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -254,6 +254,56 @@ async def courier_detail_page(request: Request, courier_id: int):
         "courier_detail.html",
         {"page": "courier_stats", "d": detail, "tg": tg},
     )
+
+
+# --------------------------- chat (admin <-> kuryer) ---------------------------
+
+@app.get("/chat", response_class=HTMLResponse)
+async def chat_list(request: Request):
+    if not _authed(request):
+        return _redirect_login()
+    return templates.TemplateResponse(
+        request,
+        "chat_list.html",
+        {"page": "chat", "chats": await svc.chat_overview()},
+    )
+
+
+@app.get("/chat/{courier_id:int}", response_class=HTMLResponse)
+async def chat_detail(request: Request, courier_id: int):
+    if not _authed(request):
+        return _redirect_login()
+    courier = await svc.get_courier(courier_id)
+    if not courier:
+        return RedirectResponse("/chat", status_code=302)
+    messages = await svc.get_chat_messages(courier_id)
+    await svc.mark_chat_read(courier_id)  # ochilganda o'qilgan deb belgilanadi
+    return templates.TemplateResponse(
+        request,
+        "chat_detail.html",
+        {"page": "chat", "courier": courier, "messages": messages},
+    )
+
+
+@app.post("/chat/{courier_id:int}/send")
+async def chat_send(request: Request, courier_id: int, text: str = Form(...)):
+    if not _authed(request):
+        return _redirect_login()
+    text = (text or "").strip()
+    courier = await svc.get_courier(courier_id)
+    if courier and text:
+        await svc.add_chat_message(courier_id, "to_courier", text)
+        if courier.telegram_id:
+            await send_text_to_courier(courier.telegram_id, text)
+        events.publish("chat_message", {"courier_id": courier_id})
+    return RedirectResponse(f"/chat/{courier_id}", status_code=302)
+
+
+@app.get("/api/chat/unread")
+async def api_chat_unread(request: Request):
+    if not _authed(request):
+        return {"error": "unauth"}
+    return {"unread": await svc.chat_unread_total()}
 
 
 # --------------------------- narxlar (pricing) ---------------------------

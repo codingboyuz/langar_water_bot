@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Chat{% endblock %}
+{% block subtitle %}Kuryerlar bilan yozishma — real vaqtda{% endblock %}
+{% block content %}
+
+<div class="card stagger overflow-hidden">
+  <div id="chatList" class="divide-y divide-slate-100">
+    {% for it in chats %}
+    {% set c = it.courier %}
+    <a href="/chat/{{ c.id }}" class="flex items-center gap-3 px-4 py-3.5 hover:bg-slate-50/70 row-tr">
+      <span class="w-11 h-11 rounded-xl bg-brand-600 text-white flex items-center justify-center text-[15px] font-semibold flex-none">
+        {{ c.name[0]|upper }}
+      </span>
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center gap-2">
+          <span class="font-semibold text-[14px] text-ink-900 truncate">{{ c.name }}</span>
+          <span class="text-[11px] text-ink-400 flex-none">{{ c.region }}</span>
+          {% if not c.telegram_id %}<span class="text-[10.5px] text-amber-600 flex-none">Telegram ulanmagan</span>{% endif %}
+        </div>
+        <div class="text-[12.5px] text-ink-500 truncate mt-0.5">
+          {% if it.last_text %}
+            {% if it.last_dir == 'to_courier' %}<span class="text-ink-400">Siz:</span> {% endif %}{{ it.last_text }}
+          {% else %}
+            <span class="text-ink-300">Hali xabar yo'q</span>
+          {% endif %}
+        </div>
+      </div>
+      <div class="flex flex-col items-end gap-1.5 flex-none">
+        {% if it.last_at %}<span class="text-[11px] text-ink-400">{{ it.last_at|dt }}</span>{% endif %}
+        {% if it.unread %}
+        <span class="min-w-[20px] h-5 px-1.5 rounded-full bg-rose-500 text-white text-[11px] font-semibold flex items-center justify-center tabular-nums">{{ it.unread }}</span>
+        {% endif %}
+      </div>
+    </a>
+    {% else %}
+    <div class="px-4 py-14 text-center text-ink-400">Kuryerlar topilmadi</div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Yangi xabar kelganda ro'yxatni jimgina yangilaymiz
+let refreshing = false;
+async function refreshChatList(){
+  if(refreshing) return;
+  refreshing = true;
+  try{
+    const r = await fetch(window.location.href, { headers:{ 'X-Requested-With':'fetch' } });
+    const html = await r.text();
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const fresh = doc.getElementById('chatList');
+    const cur = document.getElementById('chatList');
+    if(fresh && cur && fresh.innerHTML !== cur.innerHTML){ cur.replaceWith(fresh); }
+  }catch(e){}
+  finally{ refreshing = false; }
+}
+window.addEventListener('sse', (e)=>{
+  if(e.detail && e.detail.event==='chat_message') refreshChatList();
+});
+setInterval(refreshChatList, 15000);
+</script>
+{% endblock %}

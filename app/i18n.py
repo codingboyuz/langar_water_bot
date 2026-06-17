@@ -295,6 +295,11 @@ TEXTS: dict[str, dict[str, str]] = {
         "ru": "Заказ не найден.",
         "en": "Order not found.",
     },
+    "c_chat_sent": {
+        "uz": "✉️ Xabaringiz administratorga yuborildi.",
+        "ru": "✉️ Ваше сообщение отправлено администратору.",
+        "en": "✉️ Your message has been sent to the administrator.",
+    },
 }
 
 
