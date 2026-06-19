@@ -6,12 +6,12 @@
 <!-- Asosiy ko'rsatkichlar -->
 <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
   {% set cards = [
-    ('total','Jami buyurtma','i-package','#2563eb','#eff5ff'),
-    ('new','Yangi','i-bolt','#d97706','#fffbeb'),
-    ('process','Jarayonda','i-clock','#7c3aed','#f5f3ff'),
-    ('delivered','Yetkazilgan','i-check','#16a34a','#f0fdf4')
+    ('total','Jami buyurtma','i-package','#2563eb'),
+    ('new','Yangi','i-bolt','#d97706'),
+    ('process','Jarayonda','i-clock','#7c3aed'),
+    ('delivered','Yetkazilgan','i-check','#16a34a')
   ] %}
-  {% for key,label,icon,color,bg in cards %}
+  {% for key,label,icon,color in cards %}
   <a href="/orders{{ '' if key=='total' else '?status='+key }}"
      class="card card-hover stagger p-5 relative overflow-hidden group">
     <span class="absolute inset-x-0 top-0 h-1" style="background:{{ color }}"></span>
@@ -20,7 +20,7 @@
         <div class="text-ink-500 text-[12.5px] font-medium">{{ label }}</div>
         <div class="text-[30px] font-extrabold mt-1.5 tracking-tight tabular-nums" data-stat="{{ key }}" data-count="{{ counts[key] }}" style="color:{{ color }}">{{ counts[key] }}</div>
       </div>
-      <span class="w-11 h-11 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110 group-hover:-rotate-3" style="background:{{ bg }}">
+      <span class="w-11 h-11 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110 group-hover:-rotate-3" style="background:{{ color }}1f">
         <svg class="ico" style="width:21px;height:21px;color:{{ color }}"><use href="#{{ icon }}"/></svg>
       </span>
     </div>
@@ -102,6 +102,17 @@ function toggleEmpty(canvasId, emptyId, hasData){
   if(em) em.classList.toggle('hidden', hasData);
 }
 
+// Grafik ranglari mavzudan (CSS o'zgaruvchilaridan) olinadi — tungi/kunduzgi mos
+function chartColors(){
+  const css = getComputedStyle(document.documentElement);
+  return {
+    axis:       (css.getPropertyValue('--text-3').trim() || '#475569'),
+    grid:       (css.getPropertyValue('--line').trim()   || '#f1f5f9'),
+    cardBorder: (css.getPropertyValue('--card').trim()   || '#ffffff'),
+  };
+}
+let TC = chartColors();
+
 const grad = (ctx) => {
   const g = ctx.createLinearGradient(0,0,0,240);
   g.addColorStop(0,'rgba(37,99,235,.28)'); g.addColorStop(1,'rgba(37,99,235,0)');
@@ -120,18 +131,18 @@ const dayChart = new Chart(dc, {
         fill:true, tension:.4, pointRadius:0, pointHoverRadius:5, pointBackgroundColor:'#7c3aed' }
     ] },
   options:{ animation:{duration:900,easing:'easeOutCubic'},
-    plugins:{legend:{display:true,position:'top',align:'end',labels:{boxWidth:10,boxHeight:10,usePointStyle:true,font:{size:11,family:'Inter'},color:'#475569',padding:12}}},
+    plugins:{legend:{display:true,position:'top',align:'end',labels:{boxWidth:10,boxHeight:10,usePointStyle:true,font:{size:11,family:'Inter'},color:TC.axis,padding:12}}},
     interaction:{mode:'index',intersect:false},
-    scales:{ y:{beginAtZero:true,grid:{color:'#f1f5f9'},border:{display:false}}, x:{grid:{display:false},border:{display:false}} } }
+    scales:{ y:{beginAtZero:true,grid:{color:TC.grid},border:{display:false},ticks:{color:TC.axis}}, x:{grid:{display:false},border:{display:false},ticks:{color:TC.axis}} } }
 });
 
 const palette = ['#2563eb','#7c3aed','#d97706','#16a34a','#db2777','#0891b2'];
 const regionChart = new Chart(document.getElementById('regionChart'), {
   type:'doughnut',
   data:{ labels:byRegion.map(r=>r.region),
-    datasets:[{ data:byRegion.map(r=>r.count), backgroundColor:palette, borderWidth:2, borderColor:'#fff', hoverOffset:6 }] },
+    datasets:[{ data:byRegion.map(r=>r.count), backgroundColor:palette, borderWidth:2, borderColor:TC.cardBorder, hoverOffset:6 }] },
   options:{ cutout:'62%', animation:{animateRotate:true,duration:900},
-    plugins:{legend:{position:'bottom',labels:{boxWidth:10,boxHeight:10,font:{size:11,family:'Inter'},color:'#475569',padding:12}}} }
+    plugins:{legend:{position:'bottom',labels:{boxWidth:10,boxHeight:10,font:{size:11,family:'Inter'},color:TC.axis,padding:12}}} }
 });
 
 // Boshlang'ich bo'sh-holat (qiymat bor-yo'qligiga qarab)
@@ -158,6 +169,18 @@ async function refresh(){
     toggleEmpty('regionChart','regionEmpty', j.by_region.length>0);
   }catch(e){}
 }
+// Mavzu almashganda grafik ranglarini jonli yangilash
+window.addEventListener('themechange', ()=>{
+  TC = chartColors();
+  dayChart.options.plugins.legend.labels.color = TC.axis;
+  dayChart.options.scales.y.grid.color = TC.grid;
+  dayChart.options.scales.y.ticks.color = TC.axis;
+  dayChart.options.scales.x.ticks.color = TC.axis;
+  regionChart.options.plugins.legend.labels.color = TC.axis;
+  regionChart.data.datasets[0].borderColor = TC.cardBorder;
+  dayChart.update(); regionChart.update();
+});
+
 // Realtime: SSE hodisasida darhol yangilaymiz
 window.addEventListener('sse', ()=> refresh());
 // Zaxira: SSE ishlamasa ham sekin interval bilan yangilanadi

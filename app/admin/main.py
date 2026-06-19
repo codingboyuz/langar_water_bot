@@ -291,23 +291,33 @@ async def chat_root():
     return RedirectResponse("/chat/courier", status_code=302)
 
 
-@app.get("/chat/{kind}", response_class=HTMLResponse)
-async def chat_list(request: Request, kind: str):
-    if not _authed(request):
-        return _redirect_login()
-    if kind not in CHAT_KINDS:
-        return RedirectResponse("/chat/courier", status_code=302)
+async def _chat_page(request: Request, kind: str, selected_id: int | None):
+    """Ikki panelli (SPA) chat sahifasi: chap — ro'yxat, o'ng — suhbat.
+
+    To'liq sahifa faqat bir marta yuklanadi; suhbatlar AJAX bilan almashadi,
+    shu sababli har chatga kirganda qayta «rebuild» bo'lmaydi.
+    """
     return templates.TemplateResponse(
         request,
         "chat_list.html",
         {
             "page": "chat",
             "kind": kind,
+            "selected_id": selected_id,
             "chats": await svc.chat_overview(kind),
             "courier_unread": await svc.chat_unread_total("courier"),
             "client_unread": await svc.chat_unread_total("client"),
         },
     )
+
+
+@app.get("/chat/{kind}", response_class=HTMLResponse)
+async def chat_list(request: Request, kind: str):
+    if not _authed(request):
+        return _redirect_login()
+    if kind not in CHAT_KINDS:
+        return RedirectResponse("/chat/courier", status_code=302)
+    return await _chat_page(request, kind, None)
 
 
 @app.get("/chat/{kind}/{party_id:int}", response_class=HTMLResponse)
@@ -316,14 +326,37 @@ async def chat_detail(request: Request, kind: str, party_id: int):
         return _redirect_login()
     if kind not in CHAT_KINDS:
         return RedirectResponse("/chat/courier", status_code=302)
-    party = await _chat_party(kind, party_id)
-    if not party:
+    if not await _chat_party(kind, party_id):
         return RedirectResponse(f"/chat/{kind}", status_code=302)
-    return templates.TemplateResponse(
-        request,
-        "chat_detail.html",
-        {"page": "chat", "kind": kind, "party": party},
-    )
+    return await _chat_page(request, kind, party_id)
+
+
+@app.get("/chat/{kind}/overview")
+async def chat_overview_api(request: Request, kind: str):
+    """Chap paneldagi ro'yxatni arzon yangilash uchun JSON (butun sahifani emas)."""
+    if not _authed(request):
+        return {"error": "unauth"}
+    if kind not in CHAT_KINDS:
+        return {"chats": []}
+    items = await svc.chat_overview(kind)
+    return {
+        "chats": [
+            {
+                "id": it["party"]["id"],
+                "name": it["party"]["name"],
+                "phone": it["party"]["phone"],
+                "region": it["party"]["region"],
+                "tg": bool(it["party"]["tg"]),
+                "last_text": it["last_text"],
+                "last_dir": it["last_dir"],
+                "last_at": fmt_dt(it["last_at"]) if it["last_at"] else None,
+                "last_in_at": fmt_dt(it["last_in_at"]) if it["last_in_at"] else None,
+                "online": it["online"],
+                "unread": it["unread"],
+            }
+            for it in items
+        ]
+    }
 
 
 @app.get("/chat/{kind}/{party_id:int}/messages")

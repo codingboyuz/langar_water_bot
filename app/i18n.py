@@ -74,11 +74,6 @@ TEXTS: dict[str, dict[str, str]] = {
         "ru": "🏠 Введите данные дома (например: 3-подъезд, 23-квартира):",
         "en": "🏠 Enter apartment details (e.g.: entrance 3, apt 23):",
     },
-    "ask_region": {
-        "uz": "🌍 Hududingizni tanlang:",
-        "ru": "🌍 Выберите ваш регион:",
-        "en": "🌍 Choose your region:",
-    },
     "confirm_register": {
         "uz": "🧾 Ma'lumotlaringizni tekshiring:\n\n👤 F.I.Sh.: {fullname}\n📞 Telefon: {phone}\n📞 Qo'shimcha: {extra}\n🗺 Manzil: {address}\n🏠 Uy: {house}\n🌍 Hudud: {region}\n\nMa'lumotlar to'g'rimi?",
         "ru": "🧾 Проверьте свои данные:\n\n👤 Ф.И.О.: {fullname}\n📞 Телефон: {phone}\n📞 Доп.: {extra}\n🗺 Адрес: {address}\n🏠 Дом: {house}\n🌍 Регион: {region}\n\nВсё верно?",
@@ -95,7 +90,6 @@ TEXTS: dict[str, dict[str, str]] = {
     "btn_edit": {"uz": "✏️ Qayta kiritish", "ru": "✏️ Изменить", "en": "✏️ Edit"},
     "btn_cancel": {"uz": "🚫 Bekor qilish", "ru": "🚫 Отмена", "en": "🚫 Cancel"},
     "btn_confirm": {"uz": "✅ Tasdiqlash", "ru": "✅ Подтвердить", "en": "✅ Confirm"},
-    "btn_back": {"uz": "⬅️ Orqaga", "ru": "⬅️ Назад", "en": "⬅️ Back"},
     # --- Asosiy menyu ---
     "menu_title": {
         "uz": "🏠 Asosiy menyu",
@@ -144,11 +138,6 @@ TEXTS: dict[str, dict[str, str]] = {
         "uz": "🌍 Manzildan hudud aniqlanmadi. Iltimos, hududni tanlang:",
         "ru": "🌍 Не удалось определить регион по адресу. Пожалуйста, выберите регион:",
         "en": "🌍 Could not detect the region from the address. Please choose a region:",
-    },
-    "order_choose_region": {
-        "uz": "🌍 Yetkazib berish hududini tanlang:",
-        "ru": "🌍 Выберите регион доставки:",
-        "en": "🌍 Choose the delivery region:",
     },
     "order_choose_count": {
         "uz": "💧 Nechta suv kerak? Sonni kiriting (masalan: 3):",
@@ -304,6 +293,70 @@ TEXTS: dict[str, dict[str, str]] = {
         "uz": "✉️ Xabaringiz administratorga yuborildi.",
         "ru": "✉️ Ваше сообщение отправлено администратору.",
         "en": "✉️ Your message has been sent to the administrator.",
+    },
+    # --- Kuryer menyusi va profil ---
+    "c_menu_profile": {
+        "uz": "👤 Mening profilim",
+        "ru": "👤 Мой профиль",
+        "en": "👤 My profile",
+    },
+    "c_status_active": {"uz": "🟢 Faol", "ru": "🟢 Активен", "en": "🟢 Active"},
+    "c_status_inactive": {"uz": "🔴 Nofaol", "ru": "🔴 Неактивен", "en": "🔴 Inactive"},
+    "c_profile": {
+        "uz": (
+            "👤 <b>Mening profilim</b>\n\n"
+            "🆔 ID: {id}\n"
+            "👤 Ism: {name}\n"
+            "📞 Telefon: {phone}\n"
+            "🌍 Hudud: {region}\n"
+            "📅 Ro'yxatdan o'tgan: {joined}\n"
+            "🔘 Holat: {status}\n\n"
+            "📊 <b>Statistika</b>\n"
+            "✅ Bajarilgan buyurtmalar: {done} ta\n"
+            "⏳ Navbatdagi: {pending} ta\n"
+            "💧 Yetkazilgan suv (jami): {bottles} ta\n"
+            "💧 Bugun yetkazilgan: {bottles_today} ta\n\n"
+            "💰 <b>Ish haqi</b>\n"
+            "🏷 Stavka: {rate} so'm / baklashka\n"
+            "💵 Jami: {salary} so'm\n"
+            "💵 Bugun: {salary_today} so'm"
+        ),
+        "ru": (
+            "👤 <b>Мой профиль</b>\n\n"
+            "🆔 ID: {id}\n"
+            "👤 Имя: {name}\n"
+            "📞 Телефон: {phone}\n"
+            "🌍 Регион: {region}\n"
+            "📅 Дата регистрации: {joined}\n"
+            "🔘 Статус: {status}\n\n"
+            "📊 <b>Статистика</b>\n"
+            "✅ Выполнено заказов: {done} шт.\n"
+            "⏳ В очереди: {pending} шт.\n"
+            "💧 Доставлено воды (всего): {bottles} шт.\n"
+            "💧 Сегодня доставлено: {bottles_today} шт.\n\n"
+            "💰 <b>Зарплата</b>\n"
+            "🏷 Ставка: {rate} сум / баклажка\n"
+            "💵 Всего: {salary} сум\n"
+            "💵 Сегодня: {salary_today} сум"
+        ),
+        "en": (
+            "👤 <b>My profile</b>\n\n"
+            "🆔 ID: {id}\n"
+            "👤 Name: {name}\n"
+            "📞 Phone: {phone}\n"
+            "🌍 Region: {region}\n"
+            "📅 Registered: {joined}\n"
+            "🔘 Status: {status}\n\n"
+            "📊 <b>Statistics</b>\n"
+            "✅ Orders done: {done}\n"
+            "⏳ Pending: {pending}\n"
+            "💧 Water delivered (total): {bottles}\n"
+            "💧 Delivered today: {bottles_today}\n\n"
+            "💰 <b>Salary</b>\n"
+            "🏷 Rate: {rate} sum / bottle\n"
+            "💵 Total: {salary} sum\n"
+            "💵 Today: {salary_today} sum"
+        ),
     },
 }
 

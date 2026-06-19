@@ -20,8 +20,13 @@ async def send_order_to_courier(chat_id: int, order, user, lang: str = "uz") -> 
 
 
 async def send_text_to_client(chat_id: int, text: str) -> bool:
+    """Admin chatidan mijozga oddiy matn yuboradi (parse_mode'siz — xavfsiz).
+
+    HTML parse_mode'da `<`, `>`, `&` kabi belgili xabarlar Telegram tomonidan
+    rad etilib, mijozga yetib bormaydi. Shuning uchun matn xom holda yuboriladi.
+    """
     url = f"https://api.telegram.org/bot{settings.client_bot_token}/sendMessage"
-    return await _post(url, {"chat_id": chat_id, "text": text, "parse_mode": "HTML"})
+    return await _post(url, {"chat_id": chat_id, "text": text})
 
 
 async def send_text_to_courier(chat_id: int, text: str) -> bool:

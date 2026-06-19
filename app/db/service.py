@@ -33,6 +33,10 @@ from app.utils import now
 #   await_confirm — kuryer "Yetkazildi" bosdi, mijoz tasdig'i kutilmoqda
 ACTIVE_STATUSES = ("assigned", "process", "await_confirm")
 
+# Chat: suhbatdosh shu vaqt ichida yozgan bo'lsa "onlayn" deb ko'rsatiladi.
+# (Telegram bot API haqiqiy online holatni bermaydi — oxirgi faollik bo'yicha taxmin.)
+CHAT_ONLINE_WINDOW = timedelta(minutes=3)
+
 
 # ============================ MIJOZ (USER) ============================
 
@@ -357,27 +361,6 @@ async def courier_detail(courier_id: int) -> dict | None:
     }
 
 
-async def add_courier(
-    name: str,
-    phone: str,
-    region: str,
-    telegram_id: int | None,
-    lang: str = "uz",
-) -> Courier:
-    async with SessionLocal() as s:
-        c = Courier(
-            name=name,
-            phone=phone,
-            region=region,
-            telegram_id=telegram_id,
-            lang=lang,
-        )
-        s.add(c)
-        await s.commit()
-        await s.refresh(c)
-        return c
-
-
 async def register_courier(
     telegram_id: int, name: str, phone: str, region: str, lang: str
 ) -> Courier:
@@ -515,15 +498,18 @@ async def chat_overview(party_kind: str) -> list[dict]:
             .group_by(ChatMessage.party_id)
         )
         unread = {pid: int(c) for pid, c in ures.all()}
-        # har bir suhbatdoshning oxirgi xabari
-        lres = await s.execute(
+        # har bir suhbatdoshning oxirgi xabari + oxirgi KIRUVCHI (undan kelgan) xabari
+        msgs = list((await s.execute(
             select(ChatMessage)
             .where(ChatMessage.party_kind == party_kind)
             .order_by(ChatMessage.id.desc())
-        )
+        )).scalars().all())
         last_by: dict[int, ChatMessage] = {}
-        for m in lres.scalars().all():
+        last_in_by: dict[int, ChatMessage] = {}
+        for m in msgs:
             last_by.setdefault(m.party_id, m)
+            if m.direction == "in":
+                last_in_by.setdefault(m.party_id, m)
 
         if party_kind == "courier":
             rows = list((await s.execute(select(Courier).order_by(Courier.name))).scalars().all())
@@ -532,24 +518,25 @@ async def chat_overview(party_kind: str) -> list[dict]:
                 for c in rows
             ]
         else:
-            # faqat yozishmasi bor mijozlar (barcha mijozlar ro'yxati juda katta bo'lishi mumkin)
-            ids = list(last_by.keys())
-            users = []
-            if ids:
-                users = list((await s.execute(select(User).where(User.id.in_(ids)))).scalars().all())
+            # barcha mijozlar (kuryerlar kabi — yozishmasi bo'lmasa ham ro'yxatda turadi)
+            rows = list((await s.execute(select(User).order_by(User.full_name))).scalars().all())
             parties = [
                 {"id": u.id, "name": u.full_name, "phone": u.phone, "region": u.region, "tg": u.telegram_id}
-                for u in users
+                for u in rows
             ]
 
+    cutoff = now() - CHAT_ONLINE_WINDOW
     items = []
     for p in parties:
         lm = last_by.get(p["id"])
+        lm_in = last_in_by.get(p["id"])
         items.append({
             "party": p,
             "last_text": lm.text if lm else None,
             "last_at": lm.created_at if lm else None,
             "last_dir": lm.direction if lm else None,
+            "last_in_at": lm_in.created_at if lm_in else None,
+            "online": bool(lm_in and lm_in.created_at and lm_in.created_at >= cutoff),
             "unread": unread.get(p["id"], 0),
         })
     items.sort(key=lambda x: (x["last_at"] is None, -(x["last_at"].timestamp() if x["last_at"] else 0)))
@@ -643,7 +630,6 @@ async def orders_per_day(days: int = 14) -> list[dict]:
             "date": day,
             "delivered": dv,
             "process": pv,
-            "bottles": dv,  # orqaga moslik (eski kalit)
         })
     return out
 

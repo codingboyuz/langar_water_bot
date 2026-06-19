@@ -74,7 +74,6 @@ class Order(Base):
 
     # new -> process (kuryerga biriktirilgan) -> delivered -> canceled
     status: Mapped[str] = mapped_column(String(16), default="new", index=True)
-    payment_method: Mapped[str | None] = mapped_column(String(16), nullable=True)  # cash/card
 
     # Yetkazilgandan keyin kuryer kiritadi:
     delivered_count: Mapped[int | None] = mapped_column(Integer, nullable=True)

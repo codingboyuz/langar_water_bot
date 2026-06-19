@@ -1,0 +1,13 @@
+{
+  "name": "langar-water-admin-css",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Admin panel uchun Tailwind CSS build (statik, CDN o'rniga)",
+  "scripts": {
+    "css": "tailwindcss -i ./app/admin/static/src/input.css -o ./app/admin/static/app.css --minify",
+    "css:watch": "tailwindcss -i ./app/admin/static/src/input.css -o ./app/admin/static/app.css --watch"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4.17"
+  }
+}

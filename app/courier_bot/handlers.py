@@ -21,7 +21,8 @@ from app import events
 from app.config import COURIER_PROVINCES, settings
 from app.courier_bot.common import CB_DELIVERED, CB_PROCESS, client_confirm_keyboard
 from app.db import service as svc
-from app.i18n import DEFAULT_LANG, LANG_BUTTONS, t
+from app.i18n import DEFAULT_LANG, LANG_BUTTONS, LANGS, t
+from app.utils import fmt_date, money
 
 router = Router()
 
@@ -66,6 +67,18 @@ def _region_kb() -> ReplyKeyboardMarkup:
     return kb.as_markup(resize_keyboard=True)
 
 
+def _main_menu_kb(lang: str) -> ReplyKeyboardMarkup:
+    """Ro'yxatdan o'tgandan keyin doimiy ko'rinadigan menyu (hozircha — profil)."""
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text=t("c_menu_profile", lang))]],
+        resize_keyboard=True,
+    )
+
+
+# Profil tugmasi har uch tilda — chat (catch-all) handleridan ajratish uchun
+_PROFILE_LABELS = {t("c_menu_profile", lang) for lang in LANGS}
+
+
 async def _lang_of(tg_id: int, state: FSMContext) -> str:
     """Joriy til: avval FSM, keyin DB, bo'lmasa standart."""
     data = await state.get_data()
@@ -82,9 +95,10 @@ async def cmd_start(message: Message, state: FSMContext):
     await state.clear()
     courier = await svc.get_courier_by_tg(message.from_user.id)
     if courier and courier.name and courier.phone:
+        lang = courier.lang or DEFAULT_LANG
         await message.answer(
-            t("c_greet", courier.lang or DEFAULT_LANG).format(name=courier.name),
-            reply_markup=ReplyKeyboardRemove(),
+            t("c_greet", lang).format(name=courier.name),
+            reply_markup=_main_menu_kb(lang),
         )
         return
     # Ro'yxatdan o'tish — til tanlashdan boshlanadi
@@ -146,7 +160,7 @@ async def reg_region(message: Message, state: FSMContext):
         t("c_registered", lang).format(
             name=courier.name, phone=courier.phone, region=courier.region
         ),
-        reply_markup=ReplyKeyboardRemove(),
+        reply_markup=_main_menu_kb(lang),
     )
 
 
@@ -272,6 +286,40 @@ async def _notify_client_to_confirm(chat_id: int, order_id: int, lang: str) -> b
             return r.status_code == 200 and r.json().get("ok", False)
     except Exception:
         return False
+
+
+# --------------------------- mening profilim ---------------------------
+
+@router.message(StateFilter(None), F.text.in_(_PROFILE_LABELS))
+async def show_profile(message: Message):
+    """Kuryerga o'z profili va statistikasini ko'rsatadi (ish haqi, suv, buyurtmalar)."""
+    courier = await svc.get_courier_by_tg(message.from_user.id)
+    if not courier:
+        await message.answer(t("c_welcome", DEFAULT_LANG))
+        return
+    lang = courier.lang or DEFAULT_LANG
+    data = await svc.courier_detail(courier.id)
+    if not data:
+        return
+    status = t("c_status_active" if courier.is_active else "c_status_inactive", lang)
+    await message.answer(
+        t("c_profile", lang).format(
+            id=courier.id,
+            name=courier.name,
+            phone=courier.phone,
+            region=courier.region,
+            joined=fmt_date(courier.created_at),
+            status=status,
+            done=data["orders_done"],
+            pending=data["pending_count"],
+            bottles=data["bottles"],
+            bottles_today=data["bottles_today"],
+            rate=money(data["rate"]),
+            salary=money(data["salary"]),
+            salary_today=money(data["salary_today"]),
+        ),
+        reply_markup=_main_menu_kb(lang),
+    )
 
 
 # --------------------------- admin bilan chat ---------------------------

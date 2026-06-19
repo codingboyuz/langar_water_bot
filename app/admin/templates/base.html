@@ -4,28 +4,41 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Langar Water — Boshqaruv tizimi</title>
-  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Mavzu (tungi/kunduzgi): CSS yuklanishidan oldin o'rnatiladi — "flash" bo'lmaydi -->
+  <script>
+    (function(){
+      try{
+        var t = localStorage.getItem('theme');
+        if(t!=='light' && t!=='dark'){ t = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'; }
+        if(t==='dark') document.documentElement.classList.add('dark');
+      }catch(e){}
+    })();
+  </script>
+  <!-- Tailwind: oldindan kompilyatsiya qilingan statik CSS (CDN/brauzer-rebuild yo'q).
+       Qayta qurish:  npm run css   (shablon klasslari o'zgarganda) -->
+  <link rel="stylesheet" href="/static/app.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <script>
-    tailwind.config = {
-      theme: { extend: {
-        fontFamily: { sans: ['Inter','Segoe UI','system-ui','sans-serif'] },
-        colors: {
-          brand: { 50:'#eef4ff',100:'#dbe7fe',200:'#bfd3fe',300:'#93b4fb',400:'#5b8def',500:'#2563eb',600:'#1d4ed8',700:'#1e40af',800:'#1b3576',900:'#0f1e3d',950:'#0a1530' },
-          ink:   { 900:'#0f172a',800:'#1e293b',700:'#334155',600:'#475569',500:'#64748b',400:'#94a3b8',300:'#cbd5e1' },
-        },
-      }}
-    }
-  </script>
   <style>
-    :root { --line:#e7ecf3; --bg:#f5f7fb; --sidebar:#0f1e3d; }
+    /* ===== Mavzu o'zgaruvchilari ===== */
+    :root {
+      --bg:#f5f7fb; --card:#ffffff; --line:#e7ecf3; --sidebar:#0f1e3d;
+      --text:#0f172a; --text-2:#334155; --text-3:#64748b; --text-4:#94a3b8;
+      --subtle:#f8fafc; --subtle-2:#f1f5f9; --subtle-3:#e2e8f0;
+      --scroll:#cbd5e1; --scroll-hover:#94a3b8;
+    }
+    html.dark {
+      --bg:#0b1220; --card:#141e30; --line:#243246; --sidebar:#0b1730;
+      --text:#e6edf5; --text-2:#c4cdda; --text-3:#94a3b6; --text-4:#6f7f93;
+      --subtle:#172234; --subtle-2:#1c2840; --subtle-3:#26344a;
+      --scroll:#2b3947; --scroll-hover:#3a4a5c;
+    }
     * { font-family:'Inter','Segoe UI',system-ui,sans-serif; }
-    body { background:var(--bg); color:#0f172a; -webkit-font-smoothing:antialiased; }
+    body { background:var(--bg); color:var(--text); -webkit-font-smoothing:antialiased; transition:background .25s ease, color .25s ease; }
     ::-webkit-scrollbar { width:9px; height:9px; }
-    ::-webkit-scrollbar-thumb { background:#cbd5e1; border-radius:5px; }
-    ::-webkit-scrollbar-thumb:hover { background:#94a3b8; }
+    ::-webkit-scrollbar-thumb { background:var(--scroll); border-radius:5px; }
+    ::-webkit-scrollbar-thumb:hover { background:var(--scroll-hover); }
     .ico { width:1em; height:1em; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; flex:none; }
 
     /* ---- Animatsiyalar ---- */
@@ -55,7 +68,7 @@
     .nav-item.active::before { transform:scaleY(1); }
 
     /* ---- Komponentlar ---- */
-    .card { background:#fff; border:1px solid var(--line); border-radius:14px; box-shadow:0 1px 2px rgba(15,23,42,.04); transition:box-shadow .25s ease, transform .25s ease, border-color .25s ease; }
+    .card { background:var(--card); border:1px solid var(--line); border-radius:14px; box-shadow:0 1px 2px rgba(15,23,42,.04); transition:box-shadow .25s ease, transform .25s ease, border-color .25s ease, background .25s ease; }
     .card-hover:hover { transform:translateY(-3px); box-shadow:0 16px 34px -16px rgba(15,23,42,.22); border-color:#cdd9ea; }
     .btn { transition:background .18s ease, transform .12s ease, box-shadow .18s ease, color .18s ease; }
     .btn:hover { transform:translateY(-1px); }
@@ -68,6 +81,53 @@
     table thead th { font-weight:600; letter-spacing:.01em; }
 
     @media (max-width:1023px){ .sidebar { transform:translateX(-100%); } .sidebar.open { transform:none; } }
+
+    /* ===== Dark mode: Tailwind neytrallarini markazlashgan qayta xaritalash =====
+       Har bir shablonni tahrir qilmaslik uchun bu yerda bitta joydan boshqaramiz.
+       html.dark .klass (0,2,0) selektori Tailwind utility (0,1,0) dan ustun keladi. */
+    html.dark .bg-white   { background-color:var(--card); }
+    html.dark .bg-white\/70 { background-color:rgba(20,30,48,.7); }
+    html.dark .bg-slate-50  { background-color:var(--subtle); }
+    html.dark .bg-slate-100 { background-color:var(--subtle-2); }
+    html.dark .bg-slate-300 { background-color:var(--subtle-3); }
+    html.dark .hover\:bg-slate-50:hover { background-color:var(--subtle); }
+    html.dark .hover\:bg-white:hover    { background-color:var(--card); }
+
+    html.dark .text-ink-900 { color:var(--text); }
+    html.dark .text-ink-800 { color:var(--text); }
+    html.dark .text-ink-700 { color:var(--text-2); }
+    html.dark .text-ink-600 { color:var(--text-2); }
+    html.dark .text-ink-500 { color:var(--text-3); }
+    html.dark .text-ink-400 { color:var(--text-4); }
+
+    html.dark .border-slate-200 { border-color:var(--line); }
+    html.dark .border-slate-100 { border-color:var(--line); }
+    html.dark .divide-slate-100 > :not([hidden]) ~ :not([hidden]) { border-color:var(--line); }
+
+    /* pastel accent fonlar -> shaffof to'q variantlar (matn kontrastini saqlab) */
+    html.dark .bg-brand-50   { background-color:rgba(37,99,235,.20); }
+    html.dark .bg-violet-50  { background-color:rgba(139,92,246,.20); }
+    html.dark .bg-emerald-50 { background-color:rgba(16,185,129,.14); }
+    html.dark .bg-amber-50, html.dark .bg-amber-100 { background-color:rgba(245,158,11,.14); }
+    html.dark .bg-rose-50, html.dark .bg-red-50      { background-color:rgba(244,63,94,.14); }
+    html.dark .hover\:bg-emerald-100:hover { background-color:rgba(16,185,129,.20); }
+    html.dark .hover\:bg-amber-100:hover   { background-color:rgba(245,158,11,.20); }
+    html.dark .hover\:bg-rose-100:hover    { background-color:rgba(244,63,94,.20); }
+
+    html.dark .text-brand-700, html.dark .text-brand-600 { color:#93b4fb; }
+    html.dark .hover\:text-brand-600:hover { color:#93b4fb; }
+    html.dark .text-violet-700  { color:#c4b5fd; }
+    html.dark .text-emerald-800, html.dark .text-emerald-700, html.dark .text-emerald-600 { color:#6ee7b7; }
+    html.dark .text-amber-900, html.dark .text-amber-700, html.dark .text-amber-600 { color:#fcd34d; }
+    html.dark .text-rose-600, html.dark .text-red-600 { color:#fda4af; }
+
+    html.dark .border-emerald-200 { border-color:rgba(16,185,129,.30); }
+    html.dark .border-amber-200, html.dark .border-amber-100 { border-color:rgba(245,158,11,.30); }
+    html.dark .border-rose-200, html.dark .border-red-100 { border-color:rgba(244,63,94,.30); }
+
+    /* inputlar */
+    html.dark input, html.dark select, html.dark textarea { background-color:var(--card); color:var(--text); border-color:var(--line); }
+    html.dark input::placeholder, html.dark textarea::placeholder { color:var(--text-4); }
   </style>
 </head>
 <body class="min-h-screen">
@@ -101,6 +161,8 @@
     <symbol id="i-rotate" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></symbol>
     <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
     <symbol id="i-chat" viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/></symbol>
   </svg>
 
   <!-- Mobil sidebar fon -->
@@ -175,12 +237,16 @@
             </span>
             Realtime
           </span>
+          <button id="themeToggle" onclick="toggleTheme()" title="Mavzu (kunduzgi / tungi)"
+            class="btn w-9 h-9 rounded-lg border border-[var(--line)] bg-white flex items-center justify-center text-ink-600 hover:text-brand-600">
+            <svg class="ico" style="width:18px;height:18px"><use id="themeIcon" href="#i-sun"/></svg>
+          </button>
         </div>
       </div>
     </header>
 
     <!-- Kontent -->
-    <main class="px-5 lg:px-8 py-6 max-w-[1320px] w-full">
+    <main class="{% block main_class %}px-5 lg:px-8 py-6 max-w-[1320px] w-full{% endblock %}">
       {% block content %}{% endblock %}
     </main>
   </div>
@@ -192,6 +258,21 @@
       document.getElementById('sidebar').classList.toggle('open', open);
       document.getElementById('scrim').classList.toggle('hidden', !open);
     }
+
+    // ---- Mavzu (tungi / kunduzgi) ----
+    function isDark(){ return document.documentElement.classList.contains('dark'); }
+    function applyThemeIcon(){
+      const use = document.getElementById('themeIcon');
+      if(use) use.setAttribute('href', isDark() ? '#i-moon' : '#i-sun');
+    }
+    function toggleTheme(){
+      const d = document.documentElement.classList.toggle('dark');
+      try{ localStorage.setItem('theme', d ? 'dark' : 'light'); }catch(e){}
+      applyThemeIcon();
+      // grafik kabi JS bilan chiziladigan komponentlar uchun signal
+      window.dispatchEvent(new CustomEvent('themechange', { detail:{ dark:d } }));
+    }
+    applyThemeIcon();
 
     // Raqamlarni count-up animatsiyasi
     function countUp(el){

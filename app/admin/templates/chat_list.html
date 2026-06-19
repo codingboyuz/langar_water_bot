@@ -1,79 +1,399 @@
 {% extends "base.html" %}
 {% block title %}Chat{% endblock %}
 {% block subtitle %}Kuryerlar va mijozlar bilan yozishma — real vaqtda{% endblock %}
+{% block main_class %}w-full min-h-0{% endblock %}
 {% block content %}
 
-<!-- Tablar: Kuryerlar / Mijozlar -->
-<div class="flex gap-1.5 text-[13px] mb-4 stagger">
-  {% for k,label in [('courier','Kuryerlar'),('client','Mijozlar')] %}
-  {% set u = courier_unread if k=='courier' else client_unread %}
-  <a href="/chat/{{ k }}"
-     class="btn px-3.5 py-1.5 rounded-lg border font-medium inline-flex items-center gap-1.5
-     {{ 'bg-brand-600 text-white border-brand-600 shadow-sm shadow-brand-600/20' if kind==k else 'bg-white border-slate-200 text-ink-600 hover:border-brand-400 hover:text-brand-600' }}">
-    {{ label }}
-    {% if u %}<span class="min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[10.5px] font-semibold flex items-center justify-center tabular-nums">{{ u }}</span>{% endif %}
-  </a>
-  {% endfor %}
-</div>
+<style>
+  /* ===== Telegram uslubidagi to'liq oynali ikki panelli chat ===== */
+  /* Kunduzgi (light) — standart; tungi qiymatlar html.dark ostida */
+  .tg {
+    --tg-bg:#e9eef5; --tg-panel:#ffffff; --tg-line:#e7ecf3;
+    --tg-hover:#f1f5f9; --tg-active:#2b3a4a; --tg-accent:#8774e1; --tg-accent2:#7a64d4;
+    --tg-in:#ffffff; --tg-out:#8774e1; --tg-text:#0f172a; --tg-sec:#64748b;
+    --tg-field:#eef1f6; --tg-scroll:#cbd5e1; --tg-tabborder:#e2e8f0; --tg-bubble-shadow:rgba(15,23,42,.12);
+  }
+  html.dark .tg {
+    --tg-bg:#0e1621; --tg-panel:#17212b; --tg-line:#0b1219;
+    --tg-hover:#202b36; --tg-active:#2b3a4a; --tg-accent:#8774e1; --tg-accent2:#7a64d4;
+    --tg-in:#182533; --tg-out:#8774e1; --tg-text:#e9edf0; --tg-sec:#6d7f8f;
+    --tg-field:#242f3d; --tg-scroll:#2b3947; --tg-tabborder:#243240; --tg-bubble-shadow:rgba(0,0,0,.3);
+  }
+  /* To'liq oyna: yuqori panel (64px) dan tashqari butun ekran */
+  .tg-shell { display:flex; height:calc(100vh - 64px); overflow:hidden; background:var(--tg-panel); border-top:1px solid var(--tg-line); }
 
-<div class="card stagger overflow-hidden">
-  <div id="chatList" class="divide-y divide-slate-100">
-    {% for it in chats %}
-    {% set p = it.party %}
-    <a href="/chat/{{ kind }}/{{ p.id }}" class="flex items-center gap-3 px-4 py-3.5 hover:bg-slate-50/70 row-tr">
-      <span class="w-11 h-11 rounded-full {{ 'bg-brand-600' if kind=='courier' else 'bg-violet-600' }} text-white flex items-center justify-center text-[15px] font-semibold flex-none">
-        {{ (p.name or '?')[0]|upper }}
-      </span>
-      <div class="flex-1 min-w-0">
-        <div class="flex items-center gap-2">
-          <span class="font-semibold text-[14px] text-ink-900 truncate">{{ p.name }}</span>
-          <span class="text-[11px] text-ink-400 flex-none">{{ p.region }}</span>
-          {% if not p.tg %}<span class="text-[10.5px] text-amber-600 flex-none">Telegram ulanmagan</span>{% endif %}
+  /* ---- chap panel (ro'yxat) ---- */
+  .tg-side { width:360px; flex:none; display:flex; flex-direction:column; background:var(--tg-panel); border-right:1px solid var(--tg-line); }
+  .tg-search { background:var(--tg-field); color:var(--tg-text); }
+  .tg-search::placeholder { color:var(--tg-sec); }
+  .tg-list { flex:1; overflow-y:auto; }
+  .tg-item { display:flex; align-items:center; gap:12px; padding:9px 14px; cursor:pointer; transition:background .12s; }
+  .tg-item:hover { background:var(--tg-hover); }
+  .tg-item.active { background:var(--tg-accent); }
+  .tg-item.active .tg-i-name, .tg-item.active .tg-i-prev, .tg-item.active .tg-i-time { color:#fff !important; }
+  .tg-i-name { color:var(--tg-text); }
+  .tg-i-prev, .tg-i-time { color:var(--tg-sec); }
+
+  /* ---- tablar (search'dan pastda) ---- */
+  .tg-tabs { display:flex; gap:6px; margin-top:10px; }
+  .tg-tabbtn {
+    flex:1; display:inline-flex; align-items:center; justify-content:center; gap:7px;
+    padding:7px 10px; border-radius:10px; font-size:13px; font-weight:600; cursor:pointer;
+    color:var(--tg-sec); background:transparent; border:1px solid var(--tg-tabborder); transition:all .15s;
+  }
+  .tg-tabbtn:hover { color:var(--tg-text); background:var(--tg-hover); }
+  .tg-tabbtn.on { background:var(--tg-accent); color:#fff; border-color:transparent; }
+  .tg-tabbadge { min-width:18px; height:18px; padding:0 5px; border-radius:999px; background:#ef4444; color:#fff;
+    font-size:10.5px; font-weight:700; display:inline-flex; align-items:center; justify-content:center; font-variant-numeric:tabular-nums; }
+  .tg-tabbtn.on .tg-tabbadge { background:rgba(255,255,255,.28); }
+
+  /* ---- o'ng panel (suhbat) ---- */
+  .tg-main { flex:1; display:flex; flex-direction:column; min-width:0; background:var(--tg-bg); }
+  .tg-head { background:var(--tg-panel); border-bottom:1px solid var(--tg-line); }
+  .tg-wall {
+    flex:1; overflow-y:auto;
+    background-color:var(--tg-bg);
+    background-image:
+      radial-gradient(circle at 18% 22%, rgba(135,116,225,.06) 0, transparent 14%),
+      radial-gradient(circle at 82% 78%, rgba(135,116,225,.05) 0, transparent 16%);
+  }
+  .tg-row { display:flex; padding:1px 2px; }
+  /* yumaloq (30px) bubble — dumsiz (toza, zamonaviy ko'rinish) */
+  .tg-bubble {
+    position:relative; max-width:72%; padding:7px 14px; border-radius:30px;
+    font-size:13.5px; line-height:1.4; box-shadow:0 1px 1.5px var(--tg-bubble-shadow);
+    word-wrap:break-word; overflow-wrap:anywhere;
+  }
+  /* yo'nalish belgisi: kelgan -> pastki-chap, yuborilgan -> pastki-o'ng burchak o'tkirroq */
+  .tg-in  { background:var(--tg-in);  color:var(--tg-text); border-bottom-left-radius:7px; }
+  .tg-out { background:var(--tg-out); color:#fff;           border-bottom-right-radius:7px; }
+  .tg-text { white-space:pre-wrap; }
+  .tg-meta { float:right; margin:6px 0 -2px 8px; font-size:10.5px; color:var(--tg-sec); user-select:none; display:inline-flex; align-items:center; gap:3px; line-height:1; }
+  .tg-out .tg-meta { color:rgba(255,255,255,.7); }
+  .tg-tick { width:17px; height:11px; }
+  .tg-daysep { display:flex; justify-content:center; margin:10px 0 8px; }
+  .tg-daysep span { background:rgba(0,0,0,.32); color:#cdd9e0; font-size:11px; font-weight:600; padding:3px 11px; border-radius:999px; }
+  .tg-composer { background:var(--tg-panel); border-top:1px solid var(--tg-line); }
+  .tg-input { background:var(--tg-field); color:var(--tg-text); }
+  .tg-input::placeholder { color:var(--tg-sec); }
+  .tg-input::-webkit-scrollbar { width:0; }
+  .tg-list::-webkit-scrollbar, .tg-wall::-webkit-scrollbar { width:6px; }
+  .tg-list::-webkit-scrollbar-thumb, .tg-wall::-webkit-scrollbar-thumb { background:var(--tg-scroll); border-radius:99px; }
+  .tg-back { display:none; }
+
+  /* ---- mobil: bitta panel ---- */
+  @media (max-width:860px){
+    .tg-side { width:100%; }
+    .tg-main { display:none; }
+    .tg-shell.chat-open .tg-side { display:none; }
+    .tg-shell.chat-open .tg-main { display:flex; }
+    .tg-back { display:inline-flex; }
+  }
+</style>
+
+<div class="tg">
+  <div id="tgShell" class="tg-shell" data-kind="{{ kind }}" data-selected="{{ selected_id or '' }}">
+
+    <!-- CHAP: ro'yxat -->
+    <aside class="tg-side">
+      <div class="px-3 py-2.5 border-b border-[var(--tg-line)]">
+        <!-- Qidiruv -->
+        <div class="relative">
+          <svg class="absolute left-3 top-1/2 -translate-y-1/2" style="width:15px;height:15px;color:var(--tg-sec)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+          <input id="chatSearch" type="text" placeholder="Qidirish…" autocomplete="off"
+            class="tg-search w-full rounded-xl pl-9 pr-3 py-2 text-[13px] outline-none focus:ring-2 focus:ring-violet-500/40">
         </div>
-        <div class="text-[12.5px] text-ink-500 truncate mt-0.5">
-          {% if it.last_text %}
-            {% if it.last_dir == 'out' %}<span class="text-ink-400">Siz:</span> {% endif %}{{ it.last_text }}
-          {% else %}
-            <span class="text-ink-300">Hali xabar yo'q</span>
-          {% endif %}
+        <!-- Tablar: search'dan pastda -->
+        <div id="chatTabs" class="tg-tabs"></div>
+      </div>
+      <div id="chatList" class="tg-list">
+        <div class="px-4 py-10 text-center text-[13px]" style="color:var(--tg-sec)">Yuklanmoqda…</div>
+      </div>
+    </aside>
+
+    <!-- O'NG: suhbat -->
+    <section class="tg-main">
+      <!-- Placeholder (suhbat tanlanmagan) -->
+      <div id="chatPlaceholder" class="tg-wall flex flex-col items-center justify-center text-center gap-2 px-4" style="color:var(--tg-sec)">
+        <svg class="ico" style="width:34px;height:34px"><use href="#i-chat"/></svg>
+        <div class="text-[13.5px] font-medium">Suhbatni tanlang</div>
+        <div id="phHint" class="text-[11.5px]"></div>
+      </div>
+
+      <!-- Suhbat (tanlanganda ko'rinadi) -->
+      <div id="chatConv" class="hidden flex-col h-full" style="display:none">
+        <div class="tg-head px-3 py-2.5 flex items-center gap-3 flex-none">
+          <button id="chatBack" class="tg-back btn w-9 h-9 -ml-1 rounded-lg items-center justify-center text-ink-300 hover:text-white" title="Orqaga">
+            <svg class="ico" style="width:18px;height:18px;transform:scaleX(-1)"><use href="#i-chevron"/></svg>
+          </button>
+          <span id="convAvatar" class="w-10 h-10 rounded-full bg-violet-600 text-white flex items-center justify-center text-[14px] font-semibold flex-none">?</span>
+          <div class="min-w-0">
+            <div id="convName" class="font-semibold text-[14px] text-white truncate"></div>
+            <div id="convStatus" class="text-[11.5px]"></div>
+          </div>
         </div>
+
+        <div id="chatMessages" class="tg-wall px-3 sm:px-6 py-3 flex flex-col"></div>
+
+        <form id="chatForm" class="tg-composer flex items-end gap-2 px-3 py-2.5 flex-none">
+          <textarea id="chatInput" rows="1" required maxlength="2000" placeholder="Xabar yozing…"
+            class="tg-input flex-1 resize-none rounded-2xl px-4 py-2.5 text-[13.5px] outline-none focus:ring-2 focus:ring-violet-500/50 max-h-32 transition"></textarea>
+          <button type="submit" title="Yuborish"
+            class="btn w-10 h-10 rounded-full bg-violet-600 hover:bg-violet-500 text-white flex items-center justify-center shadow-sm shadow-violet-600/40 flex-none">
+            <svg class="ico" style="width:17px;height:17px"><use href="#i-send"/></svg>
+          </button>
+        </form>
       </div>
-      <div class="flex flex-col items-end gap-1.5 flex-none">
-        {% if it.last_at %}<span class="text-[11px] text-ink-400">{{ it.last_at|dt }}</span>{% endif %}
-        {% if it.unread %}
-        <span class="min-w-[20px] h-5 px-1.5 rounded-full bg-rose-500 text-white text-[11px] font-semibold flex items-center justify-center tabular-nums">{{ it.unread }}</span>
-        {% endif %}
-      </div>
-    </a>
-    {% else %}
-    <div class="px-4 py-14 text-center text-ink-400">
-      {% if kind=='client' %}Mijozlar bilan hali yozishma yo'q{% else %}Kuryerlar topilmadi{% endif %}
-    </div>
-    {% endfor %}
+    </section>
   </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-// Yangi xabar kelganda ro'yxatni jimgina yangilaymiz
-let refreshing = false;
-async function refreshChatList(){
-  if(refreshing) return;
-  refreshing = true;
-  try{
-    const r = await fetch(window.location.href, { headers:{ 'X-Requested-With':'fetch' } });
-    const html = await r.text();
-    const doc = new DOMParser().parseFromString(html, 'text/html');
-    const fresh = doc.getElementById('chatList');
-    const cur = document.getElementById('chatList');
-    if(fresh && cur && fresh.innerHTML !== cur.innerHTML){ cur.replaceWith(fresh); }
-  }catch(e){}
-  finally{ refreshing = false; }
-}
-window.addEventListener('sse', (e)=>{
-  if(e.detail && e.detail.event==='chat_message') refreshChatList();
-});
-setInterval(refreshChatList, 15000);
+(function(){
+  const shell   = document.getElementById('tgShell');
+  const listEl  = document.getElementById('chatList');
+  const searchEl= document.getElementById('chatSearch');
+  const tabsEl  = document.getElementById('chatTabs');
+  const phEl    = document.getElementById('chatPlaceholder');
+  const phHint  = document.getElementById('phHint');
+  const convEl  = document.getElementById('chatConv');
+  const msgBox  = document.getElementById('chatMessages');
+  const nameEl  = document.getElementById('convName');
+  const statusEl= document.getElementById('convStatus');
+  const avatarEl= document.getElementById('convAvatar');
+  const input   = document.getElementById('chatInput');
+  const form    = document.getElementById('chatForm');
+
+  const TICK = '<svg class="tg-tick" viewBox="0 0 21 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 6.5 4.5 10 11 2"/><path d="M10 10 16.5 2"/></svg>';
+
+  const TABS = [['courier','Kuryerlar'],['client','Mijozlar']];
+  let KIND = shell.dataset.kind;                          // joriy tab (almashtirib turiladi)
+  const unreadByKind = { courier:{{ courier_unread or 0 }}, client:{{ client_unread or 0 }} };
+
+  let chats = [];                 // ro'yxat (overview)
+  let cur = null;                 // ochiq suhbat {id,name,phone,region,tg}
+  let st  = { lastId:0, lastDay:null, seen:new Set() };  // ochiq suhbat holati
+
+  function esc(s){ const d=document.createElement('div'); d.textContent=s==null?'':s; return d.innerHTML; }
+  function accentClass(){ return KIND==='courier' ? 'bg-brand-600' : 'bg-violet-600'; }
+  function kindWord(){ return KIND==='courier' ? 'kuryer' : 'mijoz'; }
+
+  // -------- tablar --------
+  function renderTabs(){
+    tabsEl.innerHTML = TABS.map(([k,label])=>{
+      const n = unreadByKind[k]||0;
+      const badge = n ? '<span class="tg-tabbadge">'+(n>99?'99+':n)+'</span>' : '';
+      return '<button type="button" class="tg-tabbtn'+(k===KIND?' on':'')+'" data-kind="'+k+'">'+label+badge+'</button>';
+    }).join('');
+  }
+
+  // -------- ro'yxat --------
+  function renderList(){
+    const q = (searchEl.value||'').trim().toLowerCase();
+    const rows = chats.filter(c =>
+      !q || (c.name||'').toLowerCase().includes(q) || (c.phone||'').includes(q));
+    if(!rows.length){
+      listEl.innerHTML = '<div class="px-4 py-10 text-center text-[13px]" style="color:var(--tg-sec)">'+
+        (q ? 'Hech narsa topilmadi' : (KIND==='client'?'Mijozlar topilmadi':'Kuryerlar topilmadi'))+'</div>';
+      return;
+    }
+    const accent = accentClass();
+    listEl.innerHTML = rows.map(c=>{
+      const initial = ((c.name||'?').trim()[0]||'?').toUpperCase();
+      const prev = c.last_text
+        ? (c.last_dir==='out' ? '<span style="color:#8aa0b3">Siz:</span> ' : '') + esc(c.last_text)
+        : '<span style="color:#4a5a68">Hali xabar yo\'q</span>';
+      const noTg = c.tg ? '' : '<span class="text-[10.5px] text-amber-400 flex-none">Telegram yo\'q</span>';
+      const time = c.last_at ? '<span class="tg-i-time text-[11px]">'+esc(c.last_at.split(' ')[0])+'</span>' : '';
+      const badge = c.unread ? '<span class="min-w-[20px] h-5 px-1.5 rounded-full bg-violet-500 text-white text-[11px] font-semibold flex items-center justify-center tabular-nums">'+c.unread+'</span>' : '';
+      const dot = c.online ? '<span class="rounded-full bg-emerald-500" style="position:absolute;bottom:1px;right:1px;width:11px;height:11px;box-shadow:0 0 0 2px var(--tg-panel)"></span>' : '';
+      return '<div class="tg-item'+(cur&&cur.id===c.id?' active':'')+'" data-id="'+c.id+'">'+
+          '<span class="relative flex-none">'+
+            '<span class="w-12 h-12 rounded-full '+accent+' text-white flex items-center justify-center text-[16px] font-semibold">'+initial+'</span>'+dot+
+          '</span>'+
+          '<div class="flex-1 min-w-0">'+
+            '<div class="flex items-center gap-2"><span class="tg-i-name font-semibold text-[14px] truncate">'+esc(c.name)+'</span>'+noTg+'</div>'+
+            '<div class="tg-i-prev text-[12.5px] truncate mt-0.5">'+prev+'</div>'+
+          '</div>'+
+          '<div class="flex flex-col items-end gap-1.5 flex-none">'+time+badge+'</div>'+
+        '</div>';
+    }).join('');
+  }
+
+  async function loadList(){
+    try{
+      const r = await fetch('/chat/'+KIND+'/overview', { headers:{'X-Requested-With':'fetch'} });
+      const j = await r.json();
+      if(j && j.chats){
+        chats = j.chats;
+        unreadByKind[KIND] = chats.reduce((a,c)=>a+(c.unread||0),0);
+        renderList(); renderTabs();
+      }
+    }catch(e){}
+  }
+
+  searchEl.addEventListener('input', renderList);
+  listEl.addEventListener('click', (e)=>{
+    const item = e.target.closest('.tg-item');
+    if(!item) return;
+    const c = chats.find(x=>String(x.id)===item.dataset.id);
+    if(c) openChat(c, true);
+  });
+
+  // tab almashtirish (sahifa qayta yuklanmaydi)
+  tabsEl.addEventListener('click', (e)=>{
+    const btn = e.target.closest('.tg-tabbtn');
+    if(!btn) return;
+    switchKind(btn.dataset.kind, true);
+  });
+
+  function switchKind(k, push){
+    if(k===KIND || !unreadByKind.hasOwnProperty(k)) return;
+    KIND = k;
+    shell.dataset.kind = k;
+    closeChat(false);            // ochiq suhbatni yopamiz
+    searchEl.value = '';
+    chats = [];
+    listEl.innerHTML = '<div class="px-4 py-10 text-center text-[13px]" style="color:var(--tg-sec)">Yuklanmoqda…</div>';
+    renderTabs(); updateHint();
+    if(push && location.pathname !== '/chat/'+k) history.pushState({kind:k}, '', '/chat/'+k);
+    loadList();
+  }
+
+  function updateHint(){ phHint.textContent = 'Chap tomondan '+kindWord()+'ni tanlang'; }
+
+  // -------- suhbat --------
+  function dayLabel(day){
+    const d = new Date(day + 'T00:00:00');
+    const now = new Date();
+    const t0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const diff = Math.round((t0 - d) / 86400000);
+    if(diff === 0) return 'Bugun';
+    if(diff === 1) return 'Kecha';
+    return d.toLocaleDateString('ru-RU', { day:'2-digit', month:'long' });
+  }
+  function nearBottom(){ return msgBox.scrollHeight - msgBox.scrollTop - msgBox.clientHeight < 80; }
+  function scrollBottom(){ msgBox.scrollTop = msgBox.scrollHeight; }
+
+  function appendMessage(m){
+    if(st.seen.has(m.id)) return;
+    st.seen.add(m.id);
+    if(m.day !== st.lastDay){
+      st.lastDay = m.day;
+      const sep = document.createElement('div'); sep.className='tg-daysep';
+      const s = document.createElement('span'); s.textContent = dayLabel(m.day);
+      sep.appendChild(s); msgBox.appendChild(sep);
+    }
+    const out = m.dir === 'out';
+    const row = document.createElement('div'); row.className = 'tg-row ' + (out?'justify-end':'justify-start');
+    const bubble = document.createElement('div'); bubble.className = 'tg-bubble ' + (out?'tg-out':'tg-in');
+    const txt = document.createElement('span'); txt.className='tg-text'; txt.textContent = m.text;
+    const meta = document.createElement('span'); meta.className='tg-meta';
+    meta.innerHTML = '<span>'+m.time+'</span>' + (out?TICK:'');
+    bubble.appendChild(txt); bubble.appendChild(meta); row.appendChild(bubble); msgBox.appendChild(row);
+    if(m.id > st.lastId) st.lastId = m.id;
+  }
+
+  function setHeader(c){
+    nameEl.textContent = c.name || '';
+    avatarEl.textContent = ((c.name||'?').trim()[0]||'?').toUpperCase();
+    avatarEl.className = 'w-10 h-10 rounded-full '+accentClass()+' text-white flex items-center justify-center text-[14px] font-semibold flex-none';
+    if(!c.tg){ statusEl.textContent = 'Telegram ulanmagan — xabar yetib bormaydi'; statusEl.style.color='#fbbf24'; return; }
+    if(c.online){ statusEl.textContent = kindWord()+' · onlayn'; statusEl.style.color='#34d399'; }
+    else if(c.last_in_at){ statusEl.textContent = 'oxirgi faollik: '+c.last_in_at; statusEl.style.color='var(--tg-sec)'; }
+    else { statusEl.textContent = 'Telegram ulangan'; statusEl.style.color='var(--tg-sec)'; }
+  }
+
+  let loading = false;
+  async function pollMessages(){
+    if(loading || !cur) return;
+    loading = true;
+    try{
+      const r = await fetch('/chat/'+KIND+'/'+cur.id+'/messages?after='+st.lastId);
+      const j = await r.json();
+      if(j && j.messages && j.messages.length){
+        const stick = nearBottom();
+        j.messages.forEach(appendMessage);
+        if(stick) scrollBottom();
+        if(window.refreshChatBadge) window.refreshChatBadge();
+        const it = chats.find(x=>x.id===cur.id); if(it && it.unread){ it.unread=0; renderList(); }
+      }
+    }catch(e){}
+    finally{ loading = false; }
+  }
+
+  function openChat(c, push){
+    cur = c;
+    st = { lastId:0, lastDay:null, seen:new Set() };
+    msgBox.innerHTML = '';
+    setHeader(c);
+    phEl.style.display = 'none';
+    convEl.style.display = 'flex';
+    shell.classList.add('chat-open');
+    renderList();  // active belgini yangilash
+    if(push){
+      const url = '/chat/'+KIND+'/'+c.id;
+      if(location.pathname !== url) history.pushState({id:c.id, kind:KIND}, '', url);
+    }
+    pollMessages().then(()=>{ scrollBottom(); input.focus(); });
+  }
+
+  function closeChat(push){
+    cur = null;
+    convEl.style.display = 'none';
+    phEl.style.display = 'flex';
+    shell.classList.remove('chat-open');
+    renderList();
+    if(push && location.pathname !== '/chat/'+KIND) history.pushState({kind:KIND}, '', '/chat/'+KIND);
+  }
+
+  document.getElementById('chatBack').addEventListener('click', ()=>closeChat(true));
+
+  // yuborish
+  form.addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    const text = input.value.trim();
+    if(!text || !cur) return;
+    input.value=''; input.style.height='auto';
+    try{
+      const r = await fetch('/chat/'+KIND+'/'+cur.id+'/send', { method:'POST', body:new URLSearchParams({text}) });
+      const j = await r.json();
+      if(j && j.ok && j.message){ appendMessage(j.message); scrollBottom(); }
+    }catch(e){ input.value = text; }
+    input.focus();
+  });
+  input.addEventListener('input', ()=>{ input.style.height='auto'; input.style.height=Math.min(input.scrollHeight,128)+'px'; });
+  input.addEventListener('keydown', (e)=>{ if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); form.requestSubmit(); } });
+
+  // brauzer orqaga/oldinga tugmasi
+  window.addEventListener('popstate', ()=>{
+    const m = location.pathname.match(/^\/chat\/([a-z]+)(?:\/(\d+))?$/);
+    if(!m) return;
+    const k = m[1], id = m[2];
+    if(k!==KIND && unreadByKind.hasOwnProperty(k)){ switchKind(k, false); }
+    if(id){ const c = chats.find(x=>String(x.id)===id); if(c){ openChat(c,false); return; } }
+    closeChat(false);
+  });
+
+  // realtime
+  window.addEventListener('sse', (e)=>{
+    const d = e.detail;
+    if(!d || d.event!=='chat_message') return;
+    if(d.kind===KIND){ loadList(); if(cur && String(d.party_id)===String(cur.id)) pollMessages(); }
+    else if(d.kind && unreadByKind.hasOwnProperty(d.kind)){ unreadByKind[d.kind]=(unreadByKind[d.kind]||0)+1; renderTabs(); }
+  });
+  setInterval(()=>{ if(cur) pollMessages(); }, 8000);
+  setInterval(loadList, 20000);
+
+  // boshlang'ich yuklash
+  renderTabs(); updateHint();
+  (async ()=>{
+    await loadList();
+    const sel = shell.dataset.selected;
+    if(sel){ const c = chats.find(x=>String(x.id)===sel); if(c) openChat(c, false); }
+  })();
+})();
 </script>
 {% endblock %}

@@ -214,6 +214,24 @@ GOOGLE_MAPS_API_KEY=
 Bo'sh qoldirsangiz — bepul **OpenStreetMap** ishlatiladi (kalit shart emas).
 Google Maps kaliti qo'ysangiz — aniqroq manzil chiqadi.
 
+### Admin panel ko'rinishi — Tailwind CSS (statik)
+
+Admin panel CSS'i **oldindan kompilyatsiya qilinган** (`app/admin/static/app.css`).
+Avval CDN (`cdn.tailwindcss.com`) ishlatilardi — u har sahifa yuklanганда CSS'ni
+brauzerда qaytadan qurib, saytni sekinlashtirardi. Endi tayyor statik fayl beriladi.
+
+> ⚠️ **Runtime'da Node KERAK EMAS** — `app.css` tayyor holда loyihaда turadi.
+> Node faqat CSS'ni **qayta qurish** uchun kerak (shablonдаги klasslar o'zgарganда).
+
+Shablonда yangi Tailwind klass ishlatsangiz, CSS'ni qayta quring:
+```powershell
+npm install      # bir martalik (tailwindcss o'rnatadi)
+npm run css      # app.css ni qayta quradi (minified)
+# yoki ishlab chiqishда avtomatik kuzatish:
+npm run css:watch
+```
+Sozlamalar: `tailwind.config.js` (ranglar, shrift, qайси fayllar skanlanadi).
+
 ---
 
 ## 🐘 8. PostgreSQL'ga o'tish
