@@ -151,3 +151,68 @@ class BonusPromo(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
 
     user: Mapped["User"] = relationship()
+
+
+# ============================ OMBOR (SKLAD) ============================
+
+class Product(Base):
+    """Ombordagi mahsulot (suv turi).
+
+    Hozircha tizim bitta standart mahsulot — "Suv (baklashka)" — sotadi.
+    `is_default=True` bo'lgan mahsulot sotuvda avtomatik chiqimga ishlatiladi.
+    Kelajakda turli hajmlar (0.5L/1L/19L) qo'shilsa, shu jadval kengayadi.
+    """
+    __tablename__ = "products"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(128))
+    volume: Mapped[str | None] = mapped_column(String(32), nullable=True)  # masalan "19L"
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+
+    batches: Mapped[list["Batch"]] = relationship(back_populates="product")
+
+
+class Batch(Base):
+    """Kirim partiyasi — omborga bir martalik kirim.
+
+    Har bir partiya alohida sotib olish narxida bo'lishi mumkin. FIFO chiqim
+    `received_at` (keyin `id`) bo'yicha eng eski partiyadan boshlanadi.
+    `remaining` — partiyadan hali sotilmagan (qolgan) dona.
+    """
+    __tablename__ = "batches"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), index=True)
+    batch_no: Mapped[str] = mapped_column(String(32), index=True)  # partiya raqami
+    quantity: Mapped[int] = mapped_column(Integer)            # kirim qilingan dona
+    unit_cost: Mapped[int] = mapped_column(Integer)           # 1 dona sotib olish narxi (so'm)
+    total_cost: Mapped[int] = mapped_column(Integer)          # = quantity * unit_cost
+    remaining: Mapped[int] = mapped_column(Integer, index=True)  # qoldiq dona
+    supplier: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    received_at: Mapped[datetime] = mapped_column(DateTime, default=now, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+
+    product: Mapped["Product"] = relationship(back_populates="batches")
+
+
+class StockMovement(Base):
+    """Ombor harakati (audit/tarix): KIRIM ('in') yoki CHIQIM ('out').
+
+    Chiqimda `unit_price` (sotilgan narx), `unit_cost` (partiya tannarxi) va
+    `order_id` (qaysi buyurtma) yoziladi — foyda shu yerdan hisoblanadi.
+    `batch_id` NULL bo'lsa — qoldiq yetmagan "kamomad" chiqimi (ogohlantirish).
+    """
+    __tablename__ = "stock_movements"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    kind: Mapped[str] = mapped_column(String(8), index=True)  # 'in' | 'out'
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), index=True)
+    batch_id: Mapped[int | None] = mapped_column(ForeignKey("batches.id"), nullable=True)
+    order_id: Mapped[int | None] = mapped_column(ForeignKey("orders.id"), nullable=True, index=True)
+    quantity: Mapped[int] = mapped_column(Integer)
+    unit_cost: Mapped[int] = mapped_column(Integer, default=0)   # dona tannarxi (so'm)
+    unit_price: Mapped[int] = mapped_column(Integer, default=0)  # dona sotilgan narx (chiqim)
+    shortfall: Mapped[bool] = mapped_column(Boolean, default=False)  # qoldiq yetmadi
+    note: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now, index=True)

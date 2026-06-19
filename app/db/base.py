@@ -36,6 +36,7 @@ async def init_db() -> None:
     await _migrate_chat_post()     # eski yozishmalarni yangi sxemaga ko'chiramiz
     await _ensure_columns()
     await _ensure_pricing()
+    await _ensure_warehouse()
     await _ensure_admin()
 
 
@@ -168,6 +169,23 @@ async def _ensure_pricing() -> None:
         if await s.get(AppSetting, "bottle_price") is None:
             s.add(AppSetting(key="bottle_price", value="0"))
         await s.commit()
+
+
+async def _ensure_warehouse() -> None:
+    """Ombor uchun standart mahsulotni (suv) bir marta qo'shadi.
+
+    Sotuvda avtomatik chiqim shu `is_default=True` mahsulotning partiyalaridan
+    bo'ladi. Allaqachon mavjud bo'lsa — tegmaymiz.
+    """
+    from sqlalchemy import select
+
+    from app.db.models import Product
+
+    async with SessionLocal() as s:
+        exists = await s.execute(select(Product).where(Product.is_default == True))  # noqa: E712
+        if exists.scalar_one_or_none() is None:
+            s.add(Product(name="Suv (baklashka)", volume="19L", is_default=True))
+            await s.commit()
 
 
 async def _ensure_columns() -> None:

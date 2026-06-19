@@ -1,0 +1,214 @@
+{% extends "base.html" %}
+{% block title %}Ombor{% endblock %}
+{% block subtitle %}Suv kirimi, partiyalar va qoldiq — har sotuvda avtomatik kamayadi{% endblock %}
+{% block content %}
+
+{% if added %}
+<div class="card border-emerald-200 bg-emerald-50 px-4 py-3 mb-4 text-[13px] text-emerald-800 flex items-center gap-2 stagger">
+  <svg class="ico text-emerald-600" style="width:16px;height:16px"><use href="#i-check"/></svg>
+  Yangi partiya omborga kirim qilindi.
+</div>
+{% endif %}
+
+<!-- Qisqa ko'rsatkichlar -->
+<div class="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-5">
+  <div class="card stagger p-5 flex items-center gap-3">
+    <span class="w-11 h-11 rounded-xl bg-brand-50 flex items-center justify-center text-brand-600">
+      <svg class="ico" style="width:21px;height:21px"><use href="#i-box"/></svg>
+    </span>
+    <div>
+      <div class="text-ink-500 text-[12.5px] font-medium">Ombor qoldig'i</div>
+      <div class="text-[26px] font-extrabold text-ink-900 tabular-nums" data-count="{{ stock.total_qty }}">{{ stock.total_qty }}</div>
+      <div class="text-[11.5px] text-ink-400">dona</div>
+    </div>
+  </div>
+  <div class="card stagger p-5 flex items-center gap-3">
+    <span class="w-11 h-11 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600">
+      <svg class="ico" style="width:21px;height:21px"><use href="#i-cash"/></svg>
+    </span>
+    <div>
+      <div class="text-ink-500 text-[12.5px] font-medium">Qoldiq qiymati</div>
+      <div class="text-[26px] font-extrabold text-ink-900 tabular-nums" data-count="{{ stock.total_value }}" data-money="1">{{ stock.total_value|money }}</div>
+      <div class="text-[11.5px] text-ink-400">so'm (tannarx bo'yicha)</div>
+    </div>
+  </div>
+  <a href="/warehouse/reports" class="card card-hover stagger p-5 flex items-center gap-3 group">
+    <span class="w-11 h-11 rounded-xl bg-violet-50 flex items-center justify-center text-violet-700">
+      <svg class="ico" style="width:21px;height:21px"><use href="#i-bar"/></svg>
+    </span>
+    <div class="flex-1">
+      <div class="text-ink-500 text-[12.5px] font-medium">Hisobotlar</div>
+      <div class="text-[15px] font-semibold text-ink-900 mt-0.5">Foyda / zarar tahlili</div>
+      <div class="inline-flex items-center gap-1 text-[11.5px] text-ink-400 font-medium mt-1">
+        Grafiklar <svg class="ico transition-transform group-hover:translate-x-0.5" style="width:13px;height:13px"><use href="#i-chevron"/></svg>
+      </div>
+    </div>
+  </a>
+</div>
+
+<!-- Kirim formasi -->
+<div class="card stagger p-5 mb-5">
+  <div class="flex items-center gap-2 mb-4">
+    <span class="w-8 h-8 rounded-lg bg-brand-50 flex items-center justify-center text-brand-600">
+      <svg class="ico" style="width:16px;height:16px"><use href="#i-in"/></svg>
+    </span>
+    <div>
+      <h2 class="font-semibold text-[15px] text-ink-900">Yangi partiya kirim</h2>
+      <div class="text-[12px] text-ink-500">Jami summa miqdor × narx bo'yicha avtomatik hisoblanadi</div>
+    </div>
+  </div>
+  <form method="post" action="/warehouse/inbound" class="grid sm:grid-cols-2 lg:grid-cols-6 gap-3 items-end">
+    <div class="lg:col-span-2">
+      <label class="block text-[12px] text-ink-500 font-medium mb-1">Mahsulot</label>
+      <select name="product_id" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-[14px] outline-none focus:border-brand-500">
+        {% for p in products %}
+        <option value="{{ p.id }}">{{ p.name }}{% if p.volume %} ({{ p.volume }}){% endif %}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="block text-[12px] text-ink-500 font-medium mb-1">Miqdor (dona)</label>
+      <input name="quantity" inputmode="numeric" required placeholder="0"
+             class="w-full border border-slate-200 rounded-lg px-3 py-2 text-[14px] tabular-nums outline-none focus:border-brand-500">
+    </div>
+    <div>
+      <label class="block text-[12px] text-ink-500 font-medium mb-1">Dona narxi (so'm)</label>
+      <input name="unit_cost" inputmode="numeric" required placeholder="0"
+             class="w-full border border-slate-200 rounded-lg px-3 py-2 text-[14px] tabular-nums outline-none focus:border-brand-500">
+    </div>
+    <div>
+      <label class="block text-[12px] text-ink-500 font-medium mb-1">Kirim sanasi</label>
+      <input name="received_at" type="date" value="{{ today }}"
+             class="w-full border border-slate-200 rounded-lg px-3 py-2 text-[14px] outline-none focus:border-brand-500">
+    </div>
+    <div>
+      <label class="block text-[12px] text-ink-500 font-medium mb-1">Yetkazib beruvchi</label>
+      <input name="supplier" placeholder="ixtiyoriy"
+             class="w-full border border-slate-200 rounded-lg px-3 py-2 text-[14px] outline-none focus:border-brand-500">
+    </div>
+    <div class="sm:col-span-2 lg:col-span-6 flex justify-end">
+      <button class="btn inline-flex items-center gap-1.5 bg-brand-600 hover:bg-brand-700 text-white px-5 py-2.5 rounded-lg font-medium shadow-sm shadow-brand-600/20">
+        <svg class="ico" style="width:15px;height:15px"><use href="#i-plus"/></svg> Kirim qilish
+      </button>
+    </div>
+  </form>
+</div>
+
+<!-- Joriy qoldiq (mahsulot bo'yicha) -->
+<div class="card stagger overflow-hidden mb-5">
+  <div class="px-4 py-3.5 border-b border-[var(--line)] flex items-center gap-2">
+    <svg class="ico text-brand-600" style="width:17px;height:17px"><use href="#i-box"/></svg>
+    <span class="font-semibold text-[14px] text-ink-900">Joriy qoldiq</span>
+  </div>
+  <div class="overflow-x-auto">
+  <table class="w-full text-[13px]">
+    <thead>
+      <tr class="bg-slate-50 text-ink-500 text-left border-b border-[var(--line)]">
+        <th class="px-4 py-3 font-semibold">Mahsulot</th>
+        <th class="px-4 py-3 font-semibold text-right">Qoldiq (dona)</th>
+        <th class="px-4 py-3 font-semibold text-right">O'rtacha tannarx</th>
+        <th class="px-4 py-3 font-semibold text-right">Qoldiq qiymati</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-slate-100">
+      {% for it in stock['items'] %}
+      <tr class="row-tr hover:bg-slate-50/70">
+        <td class="px-4 py-3 font-medium text-ink-900">{{ it.name }}{% if it.volume %} <span class="text-ink-400">({{ it.volume }})</span>{% endif %}</td>
+        <td class="px-4 py-3 text-right tabular-nums font-semibold {{ 'text-rose-600' if it.qty <= 0 else 'text-ink-900' }}">{{ it.qty }}</td>
+        <td class="px-4 py-3 text-right tabular-nums text-ink-600">{{ it.avg_cost|money }} so'm</td>
+        <td class="px-4 py-3 text-right tabular-nums text-ink-900">{{ it.value|money }} so'm</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4" class="px-4 py-14 text-center text-ink-400">Hali mahsulot yo'q</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+
+<div class="grid lg:grid-cols-2 gap-5">
+  <!-- Partiyalar -->
+  <div class="card stagger overflow-hidden">
+    <div class="px-4 py-3.5 border-b border-[var(--line)] flex items-center gap-2">
+      <svg class="ico text-brand-600" style="width:17px;height:17px"><use href="#i-package"/></svg>
+      <span class="font-semibold text-[14px] text-ink-900">Partiyalar</span>
+    </div>
+    <div class="overflow-x-auto" style="max-height:440px">
+    <table class="w-full text-[13px]">
+      <thead class="sticky top-0">
+        <tr class="bg-slate-50 text-ink-500 text-left border-b border-[var(--line)]">
+          <th class="px-4 py-3 font-semibold">Partiya</th>
+          <th class="px-4 py-3 font-semibold text-right">Dona</th>
+          <th class="px-4 py-3 font-semibold text-right">Tannarx</th>
+          <th class="px-4 py-3 font-semibold text-right">Qoldiq</th>
+          <th class="px-4 py-3 font-semibold">Sana</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for b in batches %}
+        <tr class="row-tr hover:bg-slate-50/70">
+          <td class="px-4 py-3">
+            <div class="font-medium text-ink-900">{{ b.batch_no }}</div>
+            {% if b.supplier %}<div class="text-[11.5px] text-ink-400">{{ b.supplier }}</div>{% endif %}
+          </td>
+          <td class="px-4 py-3 text-right tabular-nums text-ink-700">{{ b.quantity }}</td>
+          <td class="px-4 py-3 text-right tabular-nums text-ink-700">{{ b.unit_cost|money }}</td>
+          <td class="px-4 py-3 text-right tabular-nums font-semibold {{ 'text-ink-400' if b.remaining == 0 else 'text-emerald-700' }}">{{ b.remaining }}</td>
+          <td class="px-4 py-3 text-ink-500 whitespace-nowrap">{{ b.received_at|date }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="px-4 py-14 text-center text-ink-400">Hali kirim yo'q</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+
+  <!-- Harakatlar tarixi -->
+  <div class="card stagger overflow-hidden">
+    <div class="px-4 py-3.5 border-b border-[var(--line)] flex items-center gap-2">
+      <svg class="ico text-brand-600" style="width:17px;height:17px"><use href="#i-clock"/></svg>
+      <span class="font-semibold text-[14px] text-ink-900">Kirim / chiqim tarixi</span>
+    </div>
+    <div class="overflow-x-auto" style="max-height:440px">
+    <table class="w-full text-[13px]">
+      <thead class="sticky top-0">
+        <tr class="bg-slate-50 text-ink-500 text-left border-b border-[var(--line)]">
+          <th class="px-4 py-3 font-semibold">Tur</th>
+          <th class="px-4 py-3 font-semibold text-right">Dona</th>
+          <th class="px-4 py-3 font-semibold text-right">Narx</th>
+          <th class="px-4 py-3 font-semibold text-right">Foyda</th>
+          <th class="px-4 py-3 font-semibold">Vaqt</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for m in movements %}
+        <tr class="row-tr hover:bg-slate-50/70">
+          <td class="px-4 py-3">
+            {% if m.kind == 'in' %}
+            <span class="inline-flex items-center gap-1 text-[12px] font-medium text-emerald-700">
+              <svg class="ico" style="width:14px;height:14px"><use href="#i-in"/></svg> Kirim</span>
+            {% else %}
+            <span class="inline-flex items-center gap-1 text-[12px] font-medium {{ 'text-amber-700' if m.shortfall else 'text-brand-600' }}">
+              <svg class="ico" style="width:14px;height:14px"><use href="#{{ 'i-warn' if m.shortfall else 'i-out' }}"/></svg>
+              {% if m.shortfall %}Kamomad{% else %}Sotuv{% if m.order_id %} #{{ m.order_id }}{% endif %}{% endif %}</span>
+            {% endif %}
+          </td>
+          <td class="px-4 py-3 text-right tabular-nums text-ink-700">{{ m.quantity }}</td>
+          <td class="px-4 py-3 text-right tabular-nums text-ink-600">
+            {% if m.kind == 'in' %}{{ m.unit_cost|money }}{% else %}{{ m.unit_price|money }}{% endif %}
+          </td>
+          <td class="px-4 py-3 text-right tabular-nums {{ 'text-emerald-700 font-semibold' if m.profit > 0 else ('text-rose-600 font-semibold' if m.profit < 0 else 'text-ink-300') }}">
+            {% if m.kind == 'out' %}{{ '+' if m.profit > 0 else '' }}{{ m.profit|money }}{% else %}—{% endif %}
+          </td>
+          <td class="px-4 py-3 text-ink-500 whitespace-nowrap">{{ m.created_at|dt }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="px-4 py-14 text-center text-ink-400">Harakatlar yo'q</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

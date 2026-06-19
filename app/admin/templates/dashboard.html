@@ -55,44 +55,79 @@
   {% endfor %}
 </div>
 
-<!-- Diagrammalar -->
-<div class="grid lg:grid-cols-3 gap-4">
-  <div class="lg:col-span-2 card stagger p-5">
-    <div class="flex items-center gap-2 mb-4">
-      <svg class="ico text-brand-600" style="width:18px;height:18px"><use href="#i-trend"/></svg>
-      <h2 class="font-semibold text-[15px] text-ink-900">Oxirgi 14 kun — suv (yetkazilgan / jarayonda)</h2>
-    </div>
-    <div class="relative" style="min-height:160px">
-      <canvas id="dayChart" height="108"></canvas>
-      <div id="dayEmpty" class="hidden absolute inset-0 flex flex-col items-center justify-center text-center gap-1.5 text-ink-400">
-        <svg class="ico" style="width:26px;height:26px"><use href="#i-trend"/></svg>
-        <div class="text-[13px] font-medium text-ink-500">Hali buyurtma yo'q</div>
-        <div class="text-[11.5px]">Buyurtma kelganda bu yerda kunlik statistika chiqadi</div>
+<!-- Ombor ko'rsatkichlari -->
+<div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
+  {% set wcards = [
+    ('Ombor qoldig\'i', stock_qty, 'dona', 'i-box', '#2563eb', false),
+    ('Qoldiq qiymati', stock_value, 'so\'m', 'i-cash', '#0891b2', true),
+    ('Sotilgan ' ~ fin_year, year_sold, 'dona', 'i-droplet', '#7c3aed', false),
+    ('Sof foyda ' ~ fin_year, year_profit, 'so\'m', 'i-wallet', '#16a34a', true)
+  ] %}
+  {% for label, val, unit, icon, color, ismoney in wcards %}
+  <a href="/warehouse{{ '/reports' if loop.index > 2 else '' }}" class="card card-hover stagger p-4 flex items-center gap-3 group">
+    <span class="w-10 h-10 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110" style="background:{{ color }}1f">
+      <svg class="ico" style="width:19px;height:19px;color:{{ color }}"><use href="#{{ icon }}"/></svg>
+    </span>
+    <div class="min-w-0">
+      <div class="text-ink-500 text-[12px] font-medium truncate">{{ label }}</div>
+      <div class="text-[19px] font-bold text-ink-900 tabular-nums truncate" data-count="{{ val }}" {% if ismoney %}data-money="1"{% endif %}>
+        {{ val|money if ismoney else val }}
       </div>
+      <div class="text-[10.5px] text-ink-400">{{ unit }}</div>
+    </div>
+  </a>
+  {% endfor %}
+</div>
+
+<!-- Moliyaviy line grafik (kun / oy / yil kesimida) -->
+<div class="card stagger p-5 mb-4">
+  <div class="flex items-center justify-between gap-3 mb-4 flex-wrap">
+    <div class="flex items-center gap-2">
+      <svg class="ico text-emerald-600" style="width:18px;height:18px"><use href="#i-trend"/></svg>
+      <h2 class="font-semibold text-[15px] text-ink-900">Sotuv narxi va tannarx — <span id="finYearLbl">{{ fin_year }}</span></h2>
+    </div>
+    <div class="flex items-center gap-2 flex-wrap">
+      <!-- Sozlama: oy va yil -->
+      <select id="finMonth" class="border border-slate-200 rounded-lg px-2.5 py-1.5 text-[12.5px] outline-none focus:border-brand-500">
+        <option value="0">Butun yil</option>
+        {% for i, mname in [(1,'Yanvar'),(2,'Fevral'),(3,'Mart'),(4,'Aprel'),(5,'May'),(6,'Iyun'),(7,'Iyul'),(8,'Avgust'),(9,'Sentabr'),(10,'Oktabr'),(11,'Noyabr'),(12,'Dekabr')] %}
+        <option value="{{ i }}">{{ mname }}</option>
+        {% endfor %}
+      </select>
+      <select id="finYear" class="border border-slate-200 rounded-lg px-2.5 py-1.5 text-[12.5px] outline-none focus:border-brand-500">
+        {% for y in fin_years %}
+        <option value="{{ y }}" {{ 'selected' if y == fin_year }}>{{ y }}</option>
+        {% endfor %}
+      </select>
+      <a href="/warehouse/reports?year={{ fin_year }}" class="text-[12.5px] text-brand-600 font-medium inline-flex items-center gap-1">
+        Hisobot <svg class="ico" style="width:13px;height:13px"><use href="#i-chevron"/></svg>
+      </a>
     </div>
   </div>
-  <div class="card stagger p-5">
-    <div class="flex items-center gap-2 mb-4">
-      <svg class="ico text-brand-600" style="width:18px;height:18px"><use href="#i-droplet"/></svg>
-      <h2 class="font-semibold text-[15px] text-ink-900">Hududlar bo'yicha</h2>
-    </div>
-    <div class="relative" style="min-height:200px">
-      <canvas id="regionChart" height="180"></canvas>
-      <div id="regionEmpty" class="hidden absolute inset-0 flex flex-col items-center justify-center text-center gap-1.5 text-ink-400">
-        <svg class="ico" style="width:26px;height:26px"><use href="#i-droplet"/></svg>
-        <div class="text-[13px] font-medium text-ink-500">Ma'lumot yo'q</div>
-        <div class="text-[11.5px]">Yetkazilgan buyurtmalar hududlar bo'yicha taqsimlanadi</div>
-      </div>
+  <div class="relative" style="min-height:200px">
+    <canvas id="finChart" height="96"></canvas>
+    <div id="finEmpty" class="hidden absolute inset-0 flex flex-col items-center justify-center text-center gap-1.5 text-ink-400">
+      <svg class="ico" style="width:26px;height:26px"><use href="#i-trend"/></svg>
+      <div class="text-[13px] font-medium text-ink-500">Hali sotuv yo'q</div>
+      <div class="text-[11.5px]">Sotuvlar bo'lgach, sotuv narxi va tannarx shu yerda chiqadi</div>
     </div>
   </div>
 </div>
+
 {% endblock %}
 
 {% block scripts %}
 <script>
 const fmtMoney = n => (n||0).toLocaleString('ru-RU').replace(/,/g,' ');
-let perDay = {{ per_day|safe }};
-let byRegion = {{ by_region|safe }};
+const fmtShort = n => { n = n||0; const a = Math.abs(n);
+  if(a >= 1e9) return (n/1e9).toFixed(1).replace('.0','')+' mlrd';
+  if(a >= 1e6) return (n/1e6).toFixed(1).replace('.0','')+' mln';
+  if(a >= 1e3) return Math.round(n/1e3)+' ming';
+  return String(n); };
+let finData = {{ fin_series|safe }};
+let finYear = {{ fin_year }};
+let finMonth = 0;  // 0 = butun yil
+const MONTH_NAMES = ['','Yanvar','Fevral','Mart','Aprel','May','Iyun','Iyul','Avgust','Sentabr','Oktabr','Noyabr','Dekabr'];
 
 // Ma'lumot bo'lmasa — bo'sh-holat ko'rsatish, bo'lsa grafikni ko'rsatish
 function toggleEmpty(canvasId, emptyId, hasData){
@@ -113,42 +148,90 @@ function chartColors(){
 }
 let TC = chartColors();
 
-const grad = (ctx) => {
-  const g = ctx.createLinearGradient(0,0,0,240);
-  g.addColorStop(0,'rgba(37,99,235,.28)'); g.addColorStop(1,'rgba(37,99,235,0)');
-  return g;
-};
-const dc = document.getElementById('dayChart').getContext('2d');
-const dayChart = new Chart(dc, {
+// ---- Moliyaviy line grafik: foyda/zarar (kun/oy/yil kesimida) ----
+const fc = document.getElementById('finChart').getContext('2d');
+// Asosiy chiziq — TANNARX. Sotuv narxi undan past bo'lsa qizil (zarar), yuqori bo'lsa yashil (foyda).
+const POS = '#16a34a', NEG = '#e11d48', BASE = '#64748b';
+// silliqlash (markazlashgan moving average) — qirrali sakrashlarni tekislaydi
+function smooth(arr, win){
+  if(win <= 1) return arr.slice();
+  const half = Math.floor(win/2);
+  return arr.map((v,i)=>{
+    if(v==null) return null;
+    let sum=0, n=0;
+    for(let k=i-half; k<=i+half; k++){ if(k>=0 && k<arr.length && arr[k]!=null){ sum+=arr[k]; n++; } }
+    return n ? Math.round(sum/n) : null;
+  });
+}
+// seriyadan dona uchun o'rtacha sotuv va tannarx narxlarini hisoblab, silliqlaymiz
+function pricePair(series){
+  const rawSell = series.map(d => d.sold ? Math.round(d.revenue / d.sold) : null);
+  const rawCost = series.map(d => d.sold ? Math.round(d.cogs / d.sold) : null);
+  const n = series.length;
+  const win = n > 180 ? 21 : (n > 60 ? 13 : (n > 20 ? 7 : 1));
+  return { labels: series.map(d => d.label), sell: smooth(rawSell, win), cost: smooth(rawCost, win) };
+}
+let pp = pricePair(finData);
+// segment rangi: sotuv narxi tannarxdan past bo'lsa qizil
+function sellSegColor(ctx){
+  const a = pp.sell[ctx.p0DataIndex], ca = pp.cost[ctx.p0DataIndex];
+  const b = pp.sell[ctx.p1DataIndex], cb = pp.cost[ctx.p1DataIndex];
+  const below = (a!=null && ca!=null && a < ca) || (b!=null && cb!=null && b < cb);
+  return below ? NEG : POS;
+}
+const finChart = new Chart(fc, {
   type:'line',
-  data:{ labels:perDay.map(d=>d.date.slice(5)),
-    datasets:[
-      { label:'Yetkazilgan', data:perDay.map(d=>d.delivered),
-        borderColor:'#2563eb', backgroundColor:grad(dc), borderWidth:2.5,
-        fill:true, tension:.4, pointRadius:0, pointHoverRadius:5, pointBackgroundColor:'#2563eb' },
-      { label:'Jarayonda', data:perDay.map(d=>d.process),
-        borderColor:'#7c3aed', backgroundColor:'rgba(124,58,237,.08)', borderWidth:2.5, borderDash:[5,4],
-        fill:true, tension:.4, pointRadius:0, pointHoverRadius:5, pointBackgroundColor:'#7c3aed' }
-    ] },
-  options:{ animation:{duration:900,easing:'easeOutCubic'},
-    plugins:{legend:{display:true,position:'top',align:'end',labels:{boxWidth:10,boxHeight:10,usePointStyle:true,font:{size:11,family:'Inter'},color:TC.axis,padding:12}}},
+  data:{ labels: pp.labels, datasets:[
+    { label:'Tannarx (asosiy)', data: pp.cost, order:2,
+      borderColor: BASE, borderWidth:2, borderDash:[6,5], fill:false, tension:.45,
+      pointRadius:0, pointHoverRadius:4, pointBackgroundColor: BASE, spanGaps:true },
+    { label:'Sotuv narxi', data: pp.sell, order:1,
+      borderColor: POS, borderWidth:3, fill:false, tension:.45,
+      pointRadius:0, pointHoverRadius:6, spanGaps:true,
+      pointBackgroundColor: pp.sell.map((v,i)=> (v!=null && pp.cost[i]!=null && v < pp.cost[i]) ? NEG : POS),
+      segment:{ borderColor: sellSegColor } }
+  ] },
+  options:{ animation:{duration:850,easing:'easeOutCubic'},
+    plugins:{ legend:{display:true,position:'top',align:'end',labels:{boxWidth:10,boxHeight:10,usePointStyle:true,font:{size:11,family:'Inter'},color:TC.axis,padding:14}},
+      tooltip:{mode:'index',intersect:false,
+        callbacks:{
+          label:c=> c.raw==null ? null : (c.dataset.label+': '+fmtMoney(c.raw)+" so'm/dona"),
+          afterBody:(items)=>{ if(!items.length) return ''; const i=items[0].dataIndex;
+            const s=pp.sell[i], co=pp.cost[i];
+            if(s==null||co==null) return '';
+            const d=s-co; return (d<0?'Zarar: ':'Foyda: ')+fmtMoney(d)+" so'm/dona"; } } } },
     interaction:{mode:'index',intersect:false},
-    scales:{ y:{beginAtZero:true,grid:{color:TC.grid},border:{display:false},ticks:{color:TC.axis}}, x:{grid:{display:false},border:{display:false},ticks:{color:TC.axis}} } }
+    scales:{ y:{grid:{color:TC.grid},border:{display:false},ticks:{color:TC.axis,callback:v=>fmtShort(v)}},
+             x:{grid:{display:false},border:{display:false},ticks:{color:TC.axis,autoSkip:true,maxTicksLimit:14,maxRotation:0}} } }
 });
 
-const palette = ['#2563eb','#7c3aed','#d97706','#16a34a','#db2777','#0891b2'];
-const regionChart = new Chart(document.getElementById('regionChart'), {
-  type:'doughnut',
-  data:{ labels:byRegion.map(r=>r.region),
-    datasets:[{ data:byRegion.map(r=>r.count), backgroundColor:palette, borderWidth:2, borderColor:TC.cardBorder, hoverOffset:6 }] },
-  options:{ cutout:'62%', animation:{animateRotate:true,duration:900},
-    plugins:{legend:{position:'bottom',labels:{boxWidth:10,boxHeight:10,font:{size:11,family:'Inter'},color:TC.axis,padding:12}}} }
-});
-
-// Boshlang'ich bo'sh-holat (qiymat bor-yo'qligiga qarab)
-const dayHasData = arr => arr.some(d => (d.delivered||0) + (d.process||0) > 0);
-toggleEmpty('dayChart','dayEmpty', dayHasData(perDay));
-toggleEmpty('regionChart','regionEmpty', byRegion.length>0);
+// Kunlik kesim — oy/yil sozlamasi bo'yicha
+function applyFinData(series){
+  finData = series;
+  pp = pricePair(series);
+  finChart.data.labels = pp.labels;
+  finChart.data.datasets[0].data = pp.cost;
+  finChart.data.datasets[1].data = pp.sell;
+  finChart.data.datasets[1].pointBackgroundColor = pp.sell.map((v,i)=> (v!=null && pp.cost[i]!=null && v < pp.cost[i]) ? NEG : POS);
+  finChart.update();
+  toggleEmpty('finChart','finEmpty', series.some(d=>d.sold));
+}
+function updateFinTitle(){
+  document.getElementById('finYearLbl').textContent =
+    (finMonth ? MONTH_NAMES[finMonth] + ' ' : '') + finYear;
+}
+async function loadFinSeries(){
+  try{
+    const r = await fetch('/api/warehouse/profit-series?granularity=day&year=' + finYear + '&month=' + finMonth);
+    const j = await r.json();
+    if(j && j.series) applyFinData(j.series);
+    updateFinTitle();
+  }catch(e){}
+}
+document.getElementById('finYear').addEventListener('change', e=>{ finYear = +e.target.value; loadFinSeries(); });
+document.getElementById('finMonth').addEventListener('change', e=>{ finMonth = +e.target.value; loadFinSeries(); });
+updateFinTitle();
+toggleEmpty('finChart','finEmpty', finData.some(d => d.sold));
 
 async function refresh(){
   try{
@@ -158,27 +241,16 @@ async function refresh(){
       const v = j.counts[el.dataset.stat];
       el.textContent = el.dataset.money ? fmtMoney(v) : v;
     });
-    dayChart.data.labels = j.per_day.map(d=>d.date.slice(5));
-    dayChart.data.datasets[0].data = j.per_day.map(d=>d.delivered);
-    dayChart.data.datasets[1].data = j.per_day.map(d=>d.process);
-    dayChart.update();
-    regionChart.data.labels = j.by_region.map(r=>r.region);
-    regionChart.data.datasets[0].data = j.by_region.map(r=>r.count);
-    regionChart.update();
-    toggleEmpty('dayChart','dayEmpty', dayHasData(j.per_day));
-    toggleEmpty('regionChart','regionEmpty', j.by_region.length>0);
   }catch(e){}
 }
 // Mavzu almashganda grafik ranglarini jonli yangilash
 window.addEventListener('themechange', ()=>{
   TC = chartColors();
-  dayChart.options.plugins.legend.labels.color = TC.axis;
-  dayChart.options.scales.y.grid.color = TC.grid;
-  dayChart.options.scales.y.ticks.color = TC.axis;
-  dayChart.options.scales.x.ticks.color = TC.axis;
-  regionChart.options.plugins.legend.labels.color = TC.axis;
-  regionChart.data.datasets[0].borderColor = TC.cardBorder;
-  dayChart.update(); regionChart.update();
+  finChart.options.plugins.legend.labels.color = TC.axis;
+  finChart.options.scales.y.grid.color = TC.grid;
+  finChart.options.scales.y.ticks.color = TC.axis;
+  finChart.options.scales.x.ticks.color = TC.axis;
+  finChart.update();
 });
 
 // Realtime: SSE hodisasida darhol yangilaymiz

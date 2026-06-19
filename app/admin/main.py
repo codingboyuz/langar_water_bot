@@ -18,9 +18,10 @@ from starlette.middleware.sessions import SessionMiddleware
 from app import events
 from app.config import settings
 from app.db import service as svc
+from app.db import warehouse as wh
 from app.db.base import init_db
 from app.admin.notify import send_order_to_courier, send_text_to_client, send_text_to_courier
-from app.utils import fmt_dt, fmt_date, money
+from app.utils import fmt_dt, fmt_date, money, now
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -90,16 +91,24 @@ async def dashboard(request: Request):
     if not _authed(request):
         return _redirect_login()
     counts = await svc.dashboard_counts()
-    per_day = await svc.orders_per_day(14)
-    by_region = await svc.orders_by_region()
+    fin_year = await wh.busiest_sales_year()
+    fin_series = await wh.profit_series("day", fin_year, None)  # standart: kunlik (butun yil)
+    fin_year_months = await wh.profit_series("month", fin_year)  # yillik jami uchun
+    fin_years = await wh.data_years()
+    stock = await wh.current_stock()
     return templates.TemplateResponse(
         request,
         "dashboard.html",
         {
             "page": "dashboard",
             "counts": counts,
-            "per_day": json.dumps(per_day),
-            "by_region": json.dumps(by_region),
+            "fin_year": fin_year,
+            "fin_years": fin_years,
+            "fin_series": json.dumps(fin_series),
+            "stock_qty": stock["total_qty"],
+            "stock_value": stock["total_value"],
+            "year_sold": sum(m["sold"] for m in fin_year_months),
+            "year_profit": sum(m["profit"] for m in fin_year_months),
         },
     )
 
@@ -475,6 +484,159 @@ async def bonus_sent(request: Request, bonus_id: int = Form(...)):
         return _redirect_login()
     await svc.mark_bonus_sent(bonus_id)
     return RedirectResponse("/clients", status_code=302)
+
+
+# --------------------------- ombor (sklad) ---------------------------
+
+@app.get("/warehouse", response_class=HTMLResponse)
+async def warehouse_page(request: Request):
+    if not _authed(request):
+        return _redirect_login()
+    added = request.query_params.get("added") == "1"
+    return templates.TemplateResponse(
+        request,
+        "warehouse.html",
+        {
+            "page": "warehouse",
+            "stock": await wh.current_stock(),
+            "batches": await wh.list_batches(),
+            "movements": await wh.list_movements(100),
+            "products": await wh.list_products(),
+            "today": now().strftime("%Y-%m-%d"),
+            "added": added,
+        },
+    )
+
+
+@app.post("/warehouse/inbound")
+async def warehouse_inbound(request: Request):
+    """Yangi partiya kirim qilish (forma yoki JSON)."""
+    if not _authed(request):
+        return _redirect_login()
+    form = await request.form()
+
+    def _int(v) -> int:
+        try:
+            return int(str(v).replace(" ", "").strip())
+        except (TypeError, ValueError):
+            return 0
+
+    product_id = _int(form.get("product_id"))
+    quantity = _int(form.get("quantity"))
+    unit_cost = _int(form.get("unit_cost"))
+    supplier = (str(form.get("supplier") or "").strip()) or None
+
+    received_at = None
+    raw_date = str(form.get("received_at") or "").strip()
+    if raw_date:
+        from datetime import datetime as _dt
+        try:
+            received_at = _dt.strptime(raw_date, "%Y-%m-%d")
+        except ValueError:
+            received_at = None
+
+    if product_id and quantity > 0 and unit_cost >= 0:
+        await wh.create_inbound(
+            product_id=product_id,
+            quantity=quantity,
+            unit_cost=unit_cost,
+            supplier=supplier,
+            received_at=received_at,
+        )
+    return RedirectResponse("/warehouse?added=1", status_code=302)
+
+
+@app.get("/warehouse/reports", response_class=HTMLResponse)
+async def warehouse_reports_page(request: Request, year: int | None = None):
+    if not _authed(request):
+        return _redirect_login()
+    year = year or now().year
+    return templates.TemplateResponse(
+        request,
+        "warehouse_reports.html",
+        {
+            "page": "warehouse",
+            "year": year,
+            "years": list(range(now().year, now().year - 5, -1)),
+            "monthly": json.dumps(await wh.monthly_report(year)),
+            "breakdown": json.dumps(await wh.sales_breakdown()),
+            "summary": await wh.warehouse_summary(),
+        },
+    )
+
+
+@app.get("/api/warehouse/stock")
+async def api_wh_stock(request: Request):
+    if not _authed(request):
+        return {"error": "unauth"}
+    return await wh.current_stock()
+
+
+@app.get("/api/warehouse/batches")
+async def api_wh_batches(request: Request, product_id: int | None = None):
+    if not _authed(request):
+        return {"error": "unauth"}
+    return {"batches": _jsonify(await wh.list_batches(product_id))}
+
+
+@app.get("/api/warehouse/movements")
+async def api_wh_movements(request: Request, limit: int = 200):
+    if not _authed(request):
+        return {"error": "unauth"}
+    return {"movements": _jsonify(await wh.list_movements(limit))}
+
+
+@app.get("/api/warehouse/reports/monthly")
+async def api_wh_monthly(request: Request, year: int | None = None):
+    if not _authed(request):
+        return {"error": "unauth"}
+    year = year or now().year
+    return {"year": year, "months": await wh.monthly_report(year)}
+
+
+@app.get("/api/warehouse/analytics/sales-breakdown")
+async def api_wh_breakdown(request: Request):
+    if not _authed(request):
+        return {"error": "unauth"}
+    return {"breakdown": await wh.sales_breakdown()}
+
+
+@app.get("/api/warehouse/profit-series")
+async def api_wh_profit_series(
+    request: Request,
+    granularity: str = "day",
+    year: int | None = None,
+    month: int | None = None,
+):
+    """Foyda/zarar vaqt qatori — kun/oy/yil kesimida (dashboard grafigi)."""
+    if not _authed(request):
+        return {"error": "unauth"}
+    if granularity not in {"day", "month", "year"}:
+        granularity = "day"
+    if granularity != "year" and year is None:
+        year = await wh.busiest_sales_year()
+    if not month:  # 0 yoki None -> butun yil
+        month = None
+    return {
+        "granularity": granularity,
+        "year": year,
+        "month": month,
+        "series": await wh.profit_series(granularity, year, month),
+    }
+
+
+def _jsonify(rows: list[dict]) -> list[dict]:
+    """`datetime` maydonlarni JSON uchun stringga aylantiradi."""
+    from datetime import datetime as _dt
+
+    out = []
+    for r in rows:
+        d = dict(r)
+        for k, v in d.items():
+            if isinstance(v, _dt):
+                d[k] = fmt_dt(v)
+        out.append(d)
+    return out
 
 
 def run() -> None:

@@ -225,10 +225,27 @@ async def confirm_received(order_id: int) -> Order | None:
         order.status = "delivered"
         if order.delivered_at is None:
             order.delivered_at = now()
+        # ombor chiqimi uchun kerakli qiymatlar (sessiya yopilgandan keyin ham)
+        sold_count = order.delivered_count if order.delivered_count is not None else order.count
+        unit_price = order.unit_price
         await s.commit()
+    # Ombordan FIFO chiqim: eng eski partiyadan kamaytiramiz, foyda yoziladi.
+    # (suv allaqachon yetkazilgan — qoldiq yetmasa bloklamaydi, kamomad belgilanadi)
+    await _warehouse_outbound(order_id, sold_count, unit_price)
     await _check_client_bonus(order_id)
     events.publish("order_update", {"order_id": order_id, "status": "delivered"})
     return await get_order(order_id)
+
+
+async def _warehouse_outbound(order_id: int, count: int, unit_price: int) -> None:
+    """Sotuv yakunlanganda ombordan FIFO chiqim (xatolik savdoni to'xtatmaydi)."""
+    try:
+        from app.db import warehouse as wh
+
+        await wh.fifo_outbound(order_id, count, unit_price)
+    except Exception:
+        # ombor chiqimi savdoni buzmasin — log darajasida e'tiborsiz qoldiramiz
+        pass
 
 
 # ============================ BONUS ============================

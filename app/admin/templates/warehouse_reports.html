@@ -1,0 +1,236 @@
+{% extends "base.html" %}
+{% block title %}Ombor — hisobotlar{% endblock %}
+{% block subtitle %}Oylik foyda/zarar, daromad vs xarajat va sotuv kesimi{% endblock %}
+{% block content %}
+
+<!-- Yuqori panel: orqaga + yil tanlash -->
+<div class="flex items-center justify-between gap-3 mb-5 flex-wrap stagger">
+  <a href="/warehouse" class="btn inline-flex items-center gap-1.5 text-[13px] font-medium text-ink-600 hover:text-brand-600">
+    <svg class="ico" style="width:15px;height:15px"><use href="#i-back"/></svg> Omborga qaytish
+  </a>
+  <form method="get" action="/warehouse/reports" class="flex items-center gap-2">
+    <span class="text-[13px] text-ink-500">Yil:</span>
+    <select name="year" onchange="this.form.submit()"
+            class="border border-slate-200 rounded-lg px-3 py-1.5 text-[13px] outline-none focus:border-brand-500">
+      {% for y in years %}
+      <option value="{{ y }}" {{ 'selected' if y == year }}>{{ y }}</option>
+      {% endfor %}
+    </select>
+  </form>
+</div>
+
+<!-- Yillik xulosa -->
+<div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
+  {% set scards = [
+    ('Joriy qoldiq', summary.stock_qty, 'dona', 'i-box', '#2563eb', false),
+    ('Bu oy daromadi', summary.month_revenue, 'so\'m', 'i-cash', '#0891b2', true),
+    ('Bu oy foydasi', summary.month_profit, 'so\'m', 'i-trend', '#16a34a', true),
+    ('Yillik foyda', summary.year_profit, 'so\'m', 'i-wallet', '#7c3aed', true)
+  ] %}
+  {% for label, val, unit, icon, color, ismoney in scards %}
+  <div class="card stagger p-5">
+    <div class="flex items-start justify-between">
+      <div>
+        <div class="text-ink-500 text-[12.5px] font-medium">{{ label }}</div>
+        <div class="text-[24px] font-extrabold mt-1 tracking-tight tabular-nums" style="color:{{ color }}"
+             data-count="{{ val }}" {% if ismoney %}data-money="1"{% endif %}>{{ val|money if ismoney else val }}</div>
+        <div class="text-[11px] text-ink-400 mt-0.5">{{ unit }}</div>
+      </div>
+      <span class="w-10 h-10 rounded-xl flex items-center justify-center" style="background:{{ color }}1f">
+        <svg class="ico" style="width:19px;height:19px;color:{{ color }}"><use href="#{{ icon }}"/></svg>
+      </span>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- Foyda/zarar grafigi -->
+<div class="card stagger p-5 mb-5">
+  <div class="flex items-center gap-2 mb-4">
+    <svg class="ico text-brand-600" style="width:18px;height:18px"><use href="#i-trend"/></svg>
+    <h2 class="font-semibold text-[15px] text-ink-900">Oylar bo'yicha foyda / zarar — {{ year }}</h2>
+  </div>
+  <div class="relative" style="min-height:160px">
+    <canvas id="profitChart" height="100"></canvas>
+    <div id="profitEmpty" class="hidden absolute inset-0 flex flex-col items-center justify-center text-center gap-1.5 text-ink-400">
+      <svg class="ico" style="width:26px;height:26px"><use href="#i-trend"/></svg>
+      <div class="text-[13px] font-medium text-ink-500">Hali sotuv yo'q</div>
+      <div class="text-[11.5px]">Buyurtmalar yetkazilgach, oylik foyda shu yerda chiqadi</div>
+    </div>
+  </div>
+</div>
+
+<div class="grid lg:grid-cols-3 gap-5 mb-5">
+  <!-- Daromad vs xarajat -->
+  <div class="lg:col-span-2 card stagger p-5">
+    <div class="flex items-center gap-2 mb-4">
+      <svg class="ico text-brand-600" style="width:18px;height:18px"><use href="#i-bar"/></svg>
+      <h2 class="font-semibold text-[15px] text-ink-900">Daromad vs xarajat (tannarx)</h2>
+    </div>
+    <div class="relative" style="min-height:160px">
+      <canvas id="revCostChart" height="120"></canvas>
+      <div id="revCostEmpty" class="hidden absolute inset-0 flex flex-col items-center justify-center text-center gap-1.5 text-ink-400">
+        <svg class="ico" style="width:26px;height:26px"><use href="#i-bar"/></svg>
+        <div class="text-[13px] font-medium text-ink-500">Ma'lumot yo'q</div>
+      </div>
+    </div>
+  </div>
+  <!-- Sotuv kesimi -->
+  <div class="card stagger p-5">
+    <div class="flex items-center gap-2 mb-4">
+      <svg class="ico text-brand-600" style="width:18px;height:18px"><use href="#i-pie"/></svg>
+      <h2 class="font-semibold text-[15px] text-ink-900">Sotuv kesimi</h2>
+    </div>
+    <div class="relative" style="min-height:200px">
+      <canvas id="breakdownChart" height="180"></canvas>
+      <div id="breakdownEmpty" class="hidden absolute inset-0 flex flex-col items-center justify-center text-center gap-1.5 text-ink-400">
+        <svg class="ico" style="width:26px;height:26px"><use href="#i-pie"/></svg>
+        <div class="text-[13px] font-medium text-ink-500">Ma'lumot yo'q</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Oylik jadval -->
+<div class="card stagger overflow-hidden">
+  <div class="px-4 py-3.5 border-b border-[var(--line)] flex items-center gap-2">
+    <svg class="ico text-brand-600" style="width:17px;height:17px"><use href="#i-bar"/></svg>
+    <span class="font-semibold text-[14px] text-ink-900">Oylik hisobot — {{ year }}</span>
+  </div>
+  <div class="overflow-x-auto">
+  <table class="w-full text-[13px]">
+    <thead>
+      <tr class="bg-slate-50 text-ink-500 text-left border-b border-[var(--line)]">
+        <th class="px-4 py-3 font-semibold">Oy</th>
+        <th class="px-4 py-3 font-semibold text-right">Kirim (xarajat)</th>
+        <th class="px-4 py-3 font-semibold text-right">Sotilgan (dona)</th>
+        <th class="px-4 py-3 font-semibold text-right">Daromad</th>
+        <th class="px-4 py-3 font-semibold text-right">Tannarx</th>
+        <th class="px-4 py-3 font-semibold text-right">Foyda / zarar</th>
+      </tr>
+    </thead>
+    <tbody id="monthlyBody" class="divide-y divide-slate-100"></tbody>
+  </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const monthly = {{ monthly|safe }};
+const breakdown = {{ breakdown|safe }};
+const fmtMoney = n => (n||0).toLocaleString('ru-RU').replace(/,/g,' ');
+
+function chartColors(){
+  const css = getComputedStyle(document.documentElement);
+  return {
+    axis: (css.getPropertyValue('--text-3').trim() || '#475569'),
+    grid: (css.getPropertyValue('--line').trim()   || '#f1f5f9'),
+    cardBorder: (css.getPropertyValue('--card').trim() || '#ffffff'),
+  };
+}
+let TC = chartColors();
+
+function toggleEmpty(canvasId, emptyId, hasData){
+  const cv = document.getElementById(canvasId);
+  const em = document.getElementById(emptyId);
+  if(cv) cv.style.visibility = hasData ? 'visible' : 'hidden';
+  if(em) em.classList.toggle('hidden', hasData);
+}
+
+const labels = monthly.map(m => m.label.slice(0,3));
+
+// 1) Foyda/zarar — ustun (foyda yashil, zarar qizil)
+const profitChart = new Chart(document.getElementById('profitChart'), {
+  type:'bar',
+  data:{ labels, datasets:[{
+    label:'Foyda / zarar',
+    data: monthly.map(m => m.profit),
+    backgroundColor: monthly.map(m => m.profit < 0 ? 'rgba(225,29,72,.75)' : 'rgba(22,163,74,.78)'),
+    borderRadius:6, borderSkipped:false,
+  }]},
+  options:{ animation:{duration:850,easing:'easeOutCubic'},
+    plugins:{legend:{display:false}, tooltip:{callbacks:{label:c=>fmtMoney(c.raw)+" so'm"}}},
+    scales:{ y:{beginAtZero:true,grid:{color:TC.grid},border:{display:false},ticks:{color:TC.axis,callback:v=>fmtMoney(v)}},
+             x:{grid:{display:false},border:{display:false},ticks:{color:TC.axis}} } }
+});
+
+// 2) Daromad vs xarajat (tannarx)
+const revCostChart = new Chart(document.getElementById('revCostChart'), {
+  type:'bar',
+  data:{ labels, datasets:[
+    { label:'Daromad', data: monthly.map(m=>m.revenue), backgroundColor:'rgba(8,145,178,.8)', borderRadius:5, borderSkipped:false },
+    { label:'Tannarx', data: monthly.map(m=>m.cogs), backgroundColor:'rgba(217,119,6,.8)', borderRadius:5, borderSkipped:false }
+  ]},
+  options:{ animation:{duration:850,easing:'easeOutCubic'},
+    plugins:{legend:{display:true,position:'top',align:'end',labels:{boxWidth:10,boxHeight:10,usePointStyle:true,font:{size:11,family:'Inter'},color:TC.axis,padding:12}},
+             tooltip:{callbacks:{label:c=>c.dataset.label+': '+fmtMoney(c.raw)+" so'm"}}},
+    scales:{ y:{beginAtZero:true,grid:{color:TC.grid},border:{display:false},ticks:{color:TC.axis,callback:v=>fmtMoney(v)}},
+             x:{grid:{display:false},border:{display:false},ticks:{color:TC.axis}} } }
+});
+
+// 3) Sotuv kesimi (mahsulot bo'yicha, dona)
+const palette = ['#2563eb','#7c3aed','#d97706','#16a34a','#db2777','#0891b2'];
+const breakdownChart = new Chart(document.getElementById('breakdownChart'), {
+  type:'doughnut',
+  data:{ labels: breakdown.map(b=>b.name),
+    datasets:[{ data: breakdown.map(b=>b.qty), backgroundColor:palette, borderWidth:2, borderColor:TC.cardBorder, hoverOffset:6 }] },
+  options:{ cutout:'60%', animation:{animateRotate:true,duration:850},
+    plugins:{legend:{position:'bottom',labels:{boxWidth:10,boxHeight:10,font:{size:11,family:'Inter'},color:TC.axis,padding:12}},
+             tooltip:{callbacks:{label:c=>c.label+': '+fmtMoney(c.raw)+' dona'}}} }
+});
+
+// Oylik jadval
+const tbody = document.getElementById('monthlyBody');
+let totals = {purchases:0,revenue:0,cogs:0,profit:0,sold:0};
+monthly.forEach(m=>{
+  totals.purchases+=m.purchases; totals.revenue+=m.revenue; totals.cogs+=m.cogs; totals.profit+=m.profit; totals.sold+=m.sold;
+  const profitCls = m.profit>0 ? 'text-emerald-700 font-semibold' : (m.profit<0 ? 'text-rose-600 font-semibold' : 'text-ink-300');
+  const sign = m.profit>0 ? '+' : '';
+  const tr = document.createElement('tr');
+  tr.className = 'row-tr hover:bg-slate-50/70';
+  tr.innerHTML = `
+    <td class="px-4 py-3 font-medium text-ink-900">${m.label}</td>
+    <td class="px-4 py-3 text-right tabular-nums text-ink-600">${fmtMoney(m.purchases)}</td>
+    <td class="px-4 py-3 text-right tabular-nums text-ink-700">${m.sold}</td>
+    <td class="px-4 py-3 text-right tabular-nums text-ink-700">${fmtMoney(m.revenue)}</td>
+    <td class="px-4 py-3 text-right tabular-nums text-ink-600">${fmtMoney(m.cogs)}</td>
+    <td class="px-4 py-3 text-right tabular-nums ${profitCls}">${sign}${fmtMoney(m.profit)}</td>`;
+  tbody.appendChild(tr);
+});
+// Jami qatori
+const tfoot = document.createElement('tr');
+tfoot.className = 'bg-slate-50 font-semibold';
+const tprofitCls = totals.profit>0 ? 'text-emerald-700' : (totals.profit<0 ? 'text-rose-600' : 'text-ink-500');
+tfoot.innerHTML = `
+  <td class="px-4 py-3 text-ink-900">Jami</td>
+  <td class="px-4 py-3 text-right tabular-nums text-ink-700">${fmtMoney(totals.purchases)}</td>
+  <td class="px-4 py-3 text-right tabular-nums text-ink-900">${totals.sold}</td>
+  <td class="px-4 py-3 text-right tabular-nums text-ink-900">${fmtMoney(totals.revenue)}</td>
+  <td class="px-4 py-3 text-right tabular-nums text-ink-700">${fmtMoney(totals.cogs)}</td>
+  <td class="px-4 py-3 text-right tabular-nums ${tprofitCls}">${totals.profit>0?'+':''}${fmtMoney(totals.profit)}</td>`;
+tbody.appendChild(tfoot);
+if(window.animateRows) window.animateRows();
+
+// Bo'sh-holatlar
+const hasSales = monthly.some(m => m.revenue || m.cogs || m.sold);
+toggleEmpty('profitChart','profitEmpty', monthly.some(m=>m.profit!==0));
+toggleEmpty('revCostChart','revCostEmpty', hasSales);
+toggleEmpty('breakdownChart','breakdownEmpty', breakdown.length>0 && breakdown.some(b=>b.qty>0));
+
+// Mavzu almashganda ranglarni yangilash
+window.addEventListener('themechange', ()=>{
+  TC = chartColors();
+  [profitChart, revCostChart].forEach(ch=>{
+    ch.options.scales.y.grid.color = TC.grid;
+    ch.options.scales.y.ticks.color = TC.axis;
+    ch.options.scales.x.ticks.color = TC.axis;
+    if(ch.options.plugins.legend.labels) ch.options.plugins.legend.labels.color = TC.axis;
+    ch.update();
+  });
+  breakdownChart.options.plugins.legend.labels.color = TC.axis;
+  breakdownChart.data.datasets[0].borderColor = TC.cardBorder;
+  breakdownChart.update();
+});
+</script>
+{% endblock %}
