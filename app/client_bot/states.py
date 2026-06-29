@@ -14,11 +14,16 @@ class Register(StatesGroup):
 
 
 class NewOrder(StatesGroup):
-    location = State()   # yetkazish manzili (lokatsiya)
-    region = State()     # zaxira: lokatsiyadan hudud aniqlanmasa qo'lda tanlanadi
+    region = State()     # zaxira: ro'yxatdagi hudud noaniq bo'lsa qo'lda tanlanadi
     count = State()
     confirm = State()
 
 
 class Settings(StatesGroup):
+    menu = State()        # sozlamalar menyusi (til / lokatsiya)
     lang = State()
+    location = State()    # lokatsiyani qo'yish / o'zgartirish
+
+
+class Feedback(StatesGroup):
+    text = State()        # talab va takliflar matni

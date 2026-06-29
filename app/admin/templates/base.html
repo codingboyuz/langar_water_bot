@@ -170,6 +170,8 @@
     <symbol id="i-out" viewBox="0 0 24 24"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></symbol>
     <symbol id="i-warn" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.46 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></symbol>
     <symbol id="i-back" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></symbol>
+    <symbol id="i-bulb" viewBox="0 0 24 24"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></symbol>
   </svg>
 
   <!-- Mobil sidebar fon -->
@@ -188,6 +190,8 @@
     </div>
 
     <nav class="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
+      {% set is_super = request.session.get('is_super') %}
+      {% set perms = request.session.get('perms') or [] %}
       {% set items = [
         ('dashboard','/dashboard','Boshqaruv paneli','i-grid'),
         ('orders','/orders','Buyurtmalar','i-package'),
@@ -195,15 +199,25 @@
         ('courier_stats','/couriers/stats','Kuryer hisobi','i-wallet'),
         ('chat','/chat','Chat','i-chat'),
         ('clients','/clients','Mijozlar','i-users'),
+        ('feedback','/feedback','Talab va takliflar','i-bulb'),
         ('pricing','/pricing','Narxlar','i-cash')
       ] %}
       {% for key,url,label,icon in items %}
+        {% if is_super or key in perms %}
         <a href="{{ url }}" style="animation:slideIn .35s ease both;animation-delay:{{ loop.index0 * 45 }}ms"
            class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13.5px] font-medium
            {{ 'active' if page==key else 'text-ink-300' }}">
           <svg class="ico" style="width:18px;height:18px"><use href="#{{ icon }}"/></svg>{{ label }}
-          {% if key=='chat' %}<span id="chatBadge" class="hidden ml-auto min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[10.5px] font-semibold flex items-center justify-center tabular-nums"></span>{% endif %}</a>
+          {% if key=='chat' %}<span id="chatBadge" class="hidden ml-auto min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[10.5px] font-semibold flex items-center justify-center tabular-nums"></span>{% endif %}
+          {% if key=='feedback' %}<span id="fbBadge" class="hidden ml-auto min-w-[18px] h-[18px] px-1 rounded-full bg-amber-500 text-white text-[10.5px] font-semibold flex items-center justify-center tabular-nums"></span>{% endif %}</a>
+        {% endif %}
       {% endfor %}
+      {% if is_super %}
+        <a href="/operators" style="animation:slideIn .35s ease both;animation-delay:315ms"
+           class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13.5px] font-medium
+           {{ 'active' if page=='operators' else 'text-ink-300' }}">
+          <svg class="ico" style="width:18px;height:18px"><use href="#i-shield"/></svg>Operatorlar</a>
+      {% endif %}
     </nav>
 
     <div class="px-3 py-3 border-t border-white/5">
@@ -213,7 +227,7 @@
         </span>
         <div class="flex-1 min-w-0 leading-tight">
           <div class="text-[13px] text-white/90 font-medium truncate">{{ request.session.get('login','admin') }}</div>
-          <div class="text-[11px] text-ink-400">Administrator</div>
+          <div class="text-[11px] text-ink-400">{{ 'Super admin' if request.session.get('is_super') else 'Operator' }}</div>
         </div>
         <a href="/logout" title="Chiqish" class="btn w-8 h-8 rounded-lg bg-white/5 hover:bg-white/15 flex items-center justify-center text-ink-300 hover:text-white">
           <svg class="ico" style="width:15px;height:15px"><use href="#i-logout"/></svg>
@@ -366,6 +380,20 @@
     }
     document.addEventListener('DOMContentLoaded', refreshChatBadge);
 
+    // ---- Talab va takliflar: o'qilmagan badge ----
+    async function refreshFeedbackBadge(){
+      const badge = document.getElementById('fbBadge');
+      if(!badge) return;
+      try{
+        const r = await fetch('/api/feedback/unread');
+        const j = await r.json();
+        const n = (j && j.unread) || 0;
+        badge.textContent = n > 99 ? '99+' : n;
+        badge.classList.toggle('hidden', n === 0);
+      }catch(_){}
+    }
+    document.addEventListener('DOMContentLoaded', refreshFeedbackBadge);
+
     // ---- Realtime SSE ulanishi ----
     (function(){
       if(!window.EventSource) return;
@@ -379,6 +407,10 @@
         if(d.event==='chat_message'){
           showToast('💬 Yangi xabar' + (d.name ? ': '+d.name : '') + (d.preview ? ' — '+d.preview : ''), 'new');
           refreshChatBadge();
+        }
+        if(d.event==='feedback'){
+          showToast('💡 Yangi taklif' + (d.name ? ': '+d.name : '') + (d.preview ? ' — '+d.preview : ''), 'new');
+          refreshFeedbackBadge();
         }
         window.dispatchEvent(new CustomEvent('sse', { detail:d }));
       };

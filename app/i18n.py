@@ -55,9 +55,82 @@ TEXTS: dict[str, dict[str, str]] = {
         "en": "➕ Enter the additional number:",
     },
     "ask_location": {
-        "uz": "📍 Manzilingizni yuboring (lokatsiya):",
-        "ru": "📍 Отправьте свою геолокацию:",
-        "en": "📍 Share your location:",
+        "uz": (
+            "📍 Manzilingizni yuboring.\n\n"
+            "📱 <b>Telefonda:</b> pastdagi «📍 Lokatsiyani yuborish» tugmasini bosing "
+            "(yoki 📎 → «Joylashuv»).\n"
+            "💻 <b>Web/Desktopda</b> tugma ishlamasa — quyidagilardan birini yuboring:\n"
+            "• Google Maps yoki Yandex Maps'dan joy <b>havolasi (link)</b>;\n"
+            "• koordinata (masalan: <code>41.31, 69.24</code>);\n"
+            "• yoki manzilni matn bilan yozing."
+        ),
+        "ru": (
+            "📍 Отправьте свой адрес.\n\n"
+            "📱 <b>На телефоне:</b> нажмите кнопку «📍 Отправить геолокацию» внизу "
+            "(или 📎 → «Геопозиция»).\n"
+            "💻 <b>В Web/Desktop</b>, если кнопка не работает — отправьте одно из:\n"
+            "• <b>ссылку</b> на место из Google Maps или Yandex Maps;\n"
+            "• координаты (например: <code>41.31, 69.24</code>);\n"
+            "• или напишите адрес текстом."
+        ),
+        "en": (
+            "📍 Send your address.\n\n"
+            "📱 <b>On phone:</b> tap the «📍 Share location» button below "
+            "(or 📎 → «Location»).\n"
+            "💻 <b>On Web/Desktop</b>, if the button doesn't work — send one of:\n"
+            "• a <b>link</b> to the place from Google Maps or Yandex Maps;\n"
+            "• coordinates (e.g.: <code>41.31, 69.24</code>);\n"
+            "• or type the address as text."
+        ),
+    },
+    "location_not_found": {
+        "uz": "❗️ Lokatsiyani aniqlay olmadim. Joylashuv tugmasi, xarita havolasi (Google/Yandex Maps), koordinata (masalan: 41.31, 69.24) yoki aniqroq manzil yuboring.",
+        "ru": "❗️ Не удалось определить местоположение. Отправьте геолокацию, ссылку на карту (Google/Yandex Maps), координаты (например: 41.31, 69.24) или более точный адрес.",
+        "en": "❗️ Couldn't detect the location. Send your location, a map link (Google/Yandex Maps), coordinates (e.g.: 41.31, 69.24), or a more precise address.",
+    },
+    "ask_region": {
+        "uz": "🌍 Hududingizni tanlang:",
+        "ru": "🌍 Выберите свой регион:",
+        "en": "🌍 Choose your region:",
+    },
+    # --- Sozlamalar menyusi ---
+    "settings_title": {
+        "uz": "⚙️ Sozlamalar — nimani o'zgartiramiz?",
+        "ru": "⚙️ Настройки — что изменить?",
+        "en": "⚙️ Settings — what to change?",
+    },
+    "btn_set_lang": {"uz": "🌐 Til", "ru": "🌐 Язык", "en": "🌐 Language"},
+    "btn_set_location": {
+        "uz": "📍 Lokatsiya / manzil",
+        "ru": "📍 Локация / адрес",
+        "en": "📍 Location / address",
+    },
+    "location_updated": {
+        "uz": "✅ Manzilingiz yangilandi:\n📍 {address}",
+        "ru": "✅ Ваш адрес обновлён:\n📍 {address}",
+        "en": "✅ Your address has been updated:\n📍 {address}",
+    },
+    # --- Talab va takliflar ---
+    "menu_feedback": {
+        "uz": "💡 Talab va takliflar",
+        "ru": "💡 Предложения и пожелания",
+        "en": "💡 Feedback & suggestions",
+    },
+    "feedback_ask": {
+        "uz": "💡 Talab yoki taklifingizni yozing — adminga yetkazamiz.\n\nBekor qilish uchun «🚫 Bekor qilish».",
+        "ru": "💡 Напишите своё предложение или пожелание — мы передадим админу.\n\nДля отмены — «🚫 Отмена».",
+        "en": "💡 Write your suggestion or request — we'll pass it to the admin.\n\nTo cancel — «🚫 Cancel».",
+    },
+    "feedback_sent": {
+        "uz": "✅ Rahmat! Fikringiz qabul qilindi va adminга yuborildi.",
+        "ru": "✅ Спасибо! Ваш отзыв принят и отправлен админу.",
+        "en": "✅ Thank you! Your feedback has been received and sent to the admin.",
+    },
+    # --- Ombor (suv) tugaganda ---
+    "out_of_stock": {
+        "uz": "😔 Kechirasiz, hozircha omborda suv yetarli emas.\n\n📦 Mavjud: {available} ta. Tez orada to'ldiriladi — birozdan keyin urinib ko'ring yoki operatorga yozing.",
+        "ru": "😔 Извините, на складе сейчас недостаточно воды.\n\n📦 В наличии: {available} шт. Скоро пополним — попробуйте позже или напишите оператору.",
+        "en": "😔 Sorry, there isn't enough water in stock right now.\n\n📦 Available: {available}. We'll restock soon — try later or message the operator.",
     },
     "btn_share_location": {
         "uz": "📍 Lokatsiyani yuborish",
@@ -129,10 +202,10 @@ TEXTS: dict[str, dict[str, str]] = {
         "en": "🎁 Bonus system\n\n💧 Total water received: {total}\n🎯 Goal: a bonus every {step}\n📊 Until next bonus: {remain}\n\nWhen a bonus is earned, the administrator will contact you.",
     },
     # --- Buyurtma ---
-    "order_send_location": {
-        "uz": "📍 Yetkazib berish manzilini yuboring (lokatsiya).\n\nHozirgi joyingizni yuborishingiz yoki 📎 (qisqich) → «Lokatsiya» orqali xaritada istalgan joyni belgilab yuborishingiz mumkin. Hudud manzildan avtomatik aniqlanadi.",
-        "ru": "📍 Отправьте адрес доставки (геолокацию).\n\nМожно отправить текущее местоположение или через 📎 → «Геопозиция» выбрать любое место на карте. Регион определится автоматически.",
-        "en": "📍 Send the delivery address (location).\n\nYou can send your current location or pick any place on the map via 📎 → «Location». The region is detected automatically.",
+    "order_deliver_to_saved": {
+        "uz": "🚚 Buyurtma ro'yxatdan o'tgan manzilingizga yetkaziladi:\n📍 {address}\n\nManzilni o'zgartirish kerak bo'lsa, «⚙️ Sozlamalar» orqali murojaat qiling.",
+        "ru": "🚚 Заказ будет доставлен по вашему адресу из регистрации:\n📍 {address}\n\nЕсли нужно изменить адрес, обратитесь через «⚙️ Настройки».",
+        "en": "🚚 The order will be delivered to your registered address:\n📍 {address}\n\nIf you need to change the address, contact us via «⚙️ Settings».",
     },
     "order_region_undetected": {
         "uz": "🌍 Manzildan hudud aniqlanmadi. Iltimos, hududni tanlang:",

@@ -12,7 +12,14 @@ from sqlalchemy import and_, func, select
 from sqlalchemy.orm import selectinload
 
 from app import events
-from app.config import CLIENT_BONUS_STEP, REGION_BY_NAME
+from app.config import (
+    BOTTLE_PRICE_DEFAULT,
+    CLIENT_ARCHIVE_DAYS,
+    CLIENT_BONUS_STEP,
+    COURIER_RATE_DEFAULT,
+    REGION_BY_NAME,
+    WATER_PRICE_DEFAULT,
+)
 from app.db.base import SessionLocal
 from app.db.models import (
     Admin,
@@ -20,11 +27,13 @@ from app.db.models import (
     BonusPromo,
     ChatMessage,
     Courier,
+    Feedback,
     Order,
-    Pricing,
+    Penalty,
+    StockMovement,
     User,
 )
-from app.security import verify_password
+from app.security import hash_password, verify_password
 from app.utils import now
 
 # Buyurtma "jarayonda" deb hisoblanadigan holatlar (yangi va yakunlangan oralig'i):
@@ -69,6 +78,130 @@ async def update_user_lang(telegram_id: int, lang: str) -> None:
             await s.commit()
 
 
+async def update_user_location(
+    telegram_id: int, latitude: float, longitude: float, geo_address: str | None
+) -> None:
+    """Mijoz Sozlamalardan lokatsiya/manzilini yangilaydi."""
+    async with SessionLocal() as s:
+        res = await s.execute(select(User).where(User.telegram_id == telegram_id))
+        user = res.scalar_one_or_none()
+        if user:
+            user.latitude = latitude
+            user.longitude = longitude
+            user.geo_address = geo_address
+            await s.commit()
+
+
+# ---- Yumshoq o'chirish (arxiv) / tiklash / butunlay o'chirish ----
+
+async def soft_delete_user(user_id: int) -> None:
+    """Mijozni arxivlaydi (yumshoq o'chirish). Ma'lumotlari saqlanadi —
+    CLIENT_ARCHIVE_DAYS kun ichida qaytsa, profil tiklanadi."""
+    async with SessionLocal() as s:
+        u = await s.get(User, user_id)
+        if u and u.deleted_at is None:
+            u.deleted_at = now()
+            await s.commit()
+
+
+async def restore_user(user_id: int) -> bool:
+    """Arxivlangan mijozni qayta faollashtiradi. Tiklangan bo'lsa True."""
+    async with SessionLocal() as s:
+        u = await s.get(User, user_id)
+        if u and u.deleted_at is not None:
+            u.deleted_at = None
+            await s.commit()
+            return True
+        return False
+
+
+async def restore_user_by_tg(telegram_id: int) -> bool:
+    """Mijoz botga qaytganda (telegram_id bo'yicha) profilni tiklaydi."""
+    async with SessionLocal() as s:
+        res = await s.execute(select(User).where(User.telegram_id == telegram_id))
+        u = res.scalar_one_or_none()
+        if u and u.deleted_at is not None:
+            u.deleted_at = None
+            await s.commit()
+            return True
+        return False
+
+
+async def hard_delete_user(user_id: int) -> None:
+    """Mijozni butunlay o'chiradi (qaytarib bo'lmaydi).
+
+    Buyurtmalari ham o'chadi, lekin ombor harakatlari (StockMovement) saqlanib
+    qoladi — moliyaviy hisobot (foyda/zarar) buzilmaydi; faqat `order_id` bog'i
+    uziladi. Bonus va chat yozishmalari ham tozalanadi.
+    """
+    async with SessionLocal() as s:
+        u = await s.get(User, user_id)
+        if not u:
+            return
+        order_ids = (
+            await s.execute(select(Order.id).where(Order.user_id == user_id))
+        ).scalars().all()
+        if order_ids:
+            # Ombor harakatlarini tarix uchun saqlaymiz — faqat bog'ni uzamiz
+            await s.execute(
+                StockMovement.__table__.update()
+                .where(StockMovement.order_id.in_(order_ids))
+                .values(order_id=None)
+            )
+            await s.execute(Order.__table__.delete().where(Order.user_id == user_id))
+        await s.execute(BonusPromo.__table__.delete().where(BonusPromo.user_id == user_id))
+        await s.execute(Penalty.__table__.delete().where(Penalty.user_id == user_id))
+        await s.execute(Feedback.__table__.delete().where(Feedback.user_id == user_id))
+        await s.execute(
+            ChatMessage.__table__.delete().where(
+                and_(ChatMessage.party_kind == "client", ChatMessage.party_id == user_id)
+            )
+        )
+        await s.delete(u)
+        await s.commit()
+
+
+async def list_archived_clients() -> list[dict]:
+    """Arxivlangan (yumshoq o'chirilgan) mijozlar — eng yangi avval."""
+    async with SessionLocal() as s:
+        res = await s.execute(
+            select(User).where(User.deleted_at.is_not(None)).order_by(User.deleted_at.desc())
+        )
+        users = res.scalars().all()
+    out = []
+    for u in users:
+        purge_at = u.deleted_at + timedelta(days=CLIENT_ARCHIVE_DAYS)
+        days_left = (purge_at - now()).days
+        out.append(
+            {
+                "user_id": u.id,
+                "name": u.full_name,
+                "phone": u.phone,
+                "region": u.region,
+                "deleted_at": u.deleted_at,
+                "purge_at": purge_at,
+                "days_left": max(days_left, 0),
+            }
+        )
+    return out
+
+
+async def purge_expired_users() -> int:
+    """CLIENT_ARCHIVE_DAYS kundan oshib ketgan arxiv mijozlarni butunlay
+    o'chiradi. O'chirilganlar sonini qaytaradi (scheduler chaqiradi)."""
+    cutoff = now() - timedelta(days=CLIENT_ARCHIVE_DAYS)
+    async with SessionLocal() as s:
+        res = await s.execute(
+            select(User.id).where(
+                and_(User.deleted_at.is_not(None), User.deleted_at < cutoff)
+            )
+        )
+        ids = list(res.scalars().all())
+    for uid in ids:
+        await hard_delete_user(uid)
+    return len(ids)
+
+
 # ============================ BUYURTMA (ORDER) ============================
 
 async def create_order(
@@ -80,15 +213,8 @@ async def create_order(
     geo_address: str | None = None,
 ) -> Order:
     async with SessionLocal() as s:
-        # narx avval DB (admin tahrirlagan) dan, bo'lmasa config dan olinadi
-        pricing = (
-            await s.execute(select(Pricing).where(Pricing.region_name == region_name))
-        ).scalar_one_or_none()
-        if pricing:
-            unit_price = pricing.water_price
-        else:
-            region = REGION_BY_NAME.get(region_name)
-            unit_price = region.price if region else 0
+        # narx barcha hududda bir xil — global sozlamadan olinadi
+        unit_price = await _setting_int(s, "water_price", WATER_PRICE_DEFAULT)
         order = Order(
             user_id=user.id,
             region=region_name,
@@ -106,6 +232,7 @@ async def create_order(
         if db_user:
             db_user.last_order_at = now()
             db_user.last_reminder_day = 0
+            db_user.deleted_at = None  # buyurtma berdi — arxivdan tiklanadi
         await s.commit()
         await s.refresh(order)
     # admin paneliga realtime xabar — yangi buyurtma keldi
@@ -325,7 +452,6 @@ async def courier_detail(courier_id: int) -> dict | None:
     Profil, ish unumdorligi (KPI), ishlagan haqi, bajarilgan va bajarilishi
     kerak bo'lgan (marshrut tartibida) buyurtmalar.
     """
-    from app.config import REGION_BY_NAME
     from app.routing import order_route
 
     async with SessionLocal() as s:
@@ -333,15 +459,8 @@ async def courier_detail(courier_id: int) -> dict | None:
         if not courier:
             return None
 
-        # kuryer stavkasi (DB narxidan, bo'lmasa config)
-        pr = (
-            await s.execute(select(Pricing).where(Pricing.region_name == courier.region))
-        ).scalar_one_or_none()
-        if pr:
-            rate = pr.courier_rate
-        else:
-            region = REGION_BY_NAME.get(courier.region)
-            rate = region.courier_rate if region else 2500
+        # kuryer stavkasi — global (barcha hududda bir xil)
+        rate = await _setting_int(s, "courier_rate", COURIER_RATE_DEFAULT)
 
         res = await s.execute(
             select(Order)
@@ -379,7 +498,14 @@ async def courier_detail(courier_id: int) -> dict | None:
 
 
 async def register_courier(
-    telegram_id: int, name: str, phone: str, region: str, lang: str
+    telegram_id: int,
+    name: str,
+    phone: str,
+    region: str,
+    lang: str,
+    latitude: float | None = None,
+    longitude: float | None = None,
+    geo_address: str | None = None,
 ) -> Courier:
     """Kuryer bot orqali o'zi ro'yxatdan o'tadi.
 
@@ -396,6 +522,9 @@ async def register_courier(
         c.phone = phone
         c.region = region
         c.lang = lang
+        c.latitude = latitude
+        c.longitude = longitude
+        c.geo_address = geo_address
         c.is_active = True
         await s.commit()
         await s.refresh(c)
@@ -573,7 +702,7 @@ async def dashboard_counts() -> dict:
             select(func.count(Order.id)).where(Order.status.in_(ACTIVE_STATUSES))
         )
         delivered = await count(select(func.count(Order.id)).where(Order.status == "delivered"))
-        clients = await count(select(func.count(User.id)))
+        clients = await count(select(func.count(User.id)).where(User.deleted_at.is_(None)))
         couriers = await count(select(func.count(Courier.id)))
         revenue = int(
             (
@@ -595,6 +724,13 @@ async def dashboard_counts() -> dict:
             ).scalar_one()
             or 0
         )
+        # baklashka shtraflari — umumiy tushumga qo'shiladi
+        penalties = int(
+            (
+                await s.execute(select(func.coalesce(func.sum(Penalty.total), 0)))
+            ).scalar_one()
+            or 0
+        )
     return {
         "total": total,
         "new": new,
@@ -602,7 +738,9 @@ async def dashboard_counts() -> dict:
         "delivered": delivered,
         "clients": clients,
         "couriers": couriers,
-        "revenue": revenue,
+        "water_revenue": revenue,           # suv savdosidan tushum
+        "penalties": penalties,             # baklashka shtraflari
+        "revenue": revenue + penalties,     # umumiy tushum
         "bottles": bottles,
     }
 
@@ -683,11 +821,13 @@ async def top_clients(limit: int = 20) -> list[dict]:
                 Order,
                 and_(Order.user_id == User.id, Order.status == "delivered"),
             )
+            .where(User.deleted_at.is_(None))  # arxivlanganlar ko'rinmaydi
             .group_by(User.id)
             .order_by(func.coalesce(func.sum(Order.delivered_count), 0).desc())
             .limit(limit)
         )
         rows = res.all()
+    ptotals = await penalty_totals_by_user()
     return [
         {
             "user_id": r[0],
@@ -697,6 +837,7 @@ async def top_clients(limit: int = 20) -> list[dict]:
             "bottles": int(r[4]),
             "orders": int(r[5]),
             "bonus_due": int(r[4]) >= CLIENT_BONUS_STEP,
+            "penalty_total": ptotals.get(r[0], 0),
         }
         for r in rows
     ]
@@ -716,7 +857,7 @@ def _period_start(period: str) -> datetime | None:
 async def courier_stats(period: str = "all") -> list[dict]:
     """Har bir kuryer bo'yicha: yetkazilgan suv soni va ish haqi.
 
-    Ish haqi = sum(delivered_count * region.courier_rate).
+    Ish haqi = yetkazilgan dona × global kuryer stavkasi (barcha hududda bir xil).
     """
     start = _period_start(period)
     # 'delivered' shartlari OUTER JOIN ON ichida — shunda yetkazmagan kuryer
@@ -742,23 +883,13 @@ async def courier_stats(period: str = "all") -> list[dict]:
         )
         res = await s.execute(stmt)
         rows = res.all()
-        # kuryer stavkasi DB narxidan (admin tahrirlagan)
-        pricing_rows = (await s.execute(select(Pricing))).scalars().all()
-        rate_by_name = {p.region_name: p.courier_rate for p in pricing_rows}
+        # kuryer stavkasi — global (barcha hududda bir xil)
+        rate = await _setting_int(s, "courier_rate", COURIER_RATE_DEFAULT)
 
-    from app.config import (
-        COURIER_DAILY_BONUS_AMOUNT,
-        COURIER_DAILY_BONUS_STEP,
-        REGION_BY_NAME,
-    )
+    from app.config import COURIER_DAILY_BONUS_AMOUNT, COURIER_DAILY_BONUS_STEP
 
     out = []
     for r in rows:
-        if r[3] in rate_by_name:
-            rate = rate_by_name[r[3]]
-        else:
-            region = REGION_BY_NAME.get(r[3])
-            rate = region.courier_rate if region else 2500
         bottles = int(r[4])
         salary = bottles * rate
         bonus = (bottles // COURIER_DAILY_BONUS_STEP) * COURIER_DAILY_BONUS_AMOUNT if period == "day" else 0
@@ -781,46 +912,124 @@ async def courier_stats(period: str = "all") -> list[dict]:
     return out
 
 
-# ============================ NARXLAR ============================
+# ============================ NARXLAR (global) ============================
+# Narxlar barcha hududda bir xil — AppSetting kalitlarida saqlanadi:
+#   water_price   — 1 dona suv narxi
+#   courier_rate  — kuryerga 1 dona uchun
+#   bottle_price  — 1 dona baklashka shtrafi (qaytarilmasa)
 
-async def list_pricing() -> Sequence[Pricing]:
+async def _setting_int(s, key: str, default: int = 0) -> int:
+    """Berilgan sessiyada AppSetting qiymatini butun son sifatida o'qiydi."""
+    st = await s.get(AppSetting, key)
+    try:
+        return int(st.value) if st else default
+    except (TypeError, ValueError):
+        return default
+
+
+async def get_pricing() -> dict:
+    """Joriy global narxlar: {water_price, courier_rate, bottle_price}."""
     async with SessionLocal() as s:
-        res = await s.execute(select(Pricing).order_by(Pricing.id))
-        return res.scalars().all()
+        return {
+            "water_price": await _setting_int(s, "water_price", WATER_PRICE_DEFAULT),
+            "courier_rate": await _setting_int(s, "courier_rate", COURIER_RATE_DEFAULT),
+            "bottle_price": await _setting_int(s, "bottle_price", BOTTLE_PRICE_DEFAULT),
+        }
 
 
 async def get_bottle_price() -> int:
     async with SessionLocal() as s:
-        st = await s.get(AppSetting, "bottle_price")
-        try:
-            return int(st.value) if st else 0
-        except (TypeError, ValueError):
-            return 0
+        return await _setting_int(s, "bottle_price", BOTTLE_PRICE_DEFAULT)
 
 
-async def update_pricing(prices: dict[str, dict[str, int]], bottle_price: int | None = None) -> None:
-    """Narxlarni yangilaydi.
-
-    prices: {region_key: {"water_price": int, "courier_rate": int}}
-    """
+async def update_pricing_global(
+    water_price: int | None = None,
+    courier_rate: int | None = None,
+    bottle_price: int | None = None,
+) -> None:
+    """Global narxlarni yangilaydi (None bo'lganlarga tegmaydi)."""
     async with SessionLocal() as s:
-        rows = (await s.execute(select(Pricing))).scalars().all()
-        for p in rows:
-            upd = prices.get(p.region_key)
-            if not upd:
+        for key, val in (
+            ("water_price", water_price),
+            ("courier_rate", courier_rate),
+            ("bottle_price", bottle_price),
+        ):
+            if val is None:
                 continue
-            if "water_price" in upd:
-                p.water_price = max(0, int(upd["water_price"]))
-            if "courier_rate" in upd:
-                p.courier_rate = max(0, int(upd["courier_rate"]))
-        if bottle_price is not None:
-            st = await s.get(AppSetting, "bottle_price")
+            v = str(max(0, int(val)))
+            st = await s.get(AppSetting, key)
             if st is None:
-                st = AppSetting(key="bottle_price", value=str(max(0, bottle_price)))
-                s.add(st)
+                s.add(AppSetting(key=key, value=v))
             else:
-                st.value = str(max(0, bottle_price))
+                st.value = v
         await s.commit()
+
+
+# ============================ SHTRAF (baklashka) ============================
+
+async def add_penalty(user_id: int, count: int, note: str | None = None) -> Penalty | None:
+    """Mijozga baklashka shtrafini qo'lda yozadi (faqat son kiritiladi).
+
+    Narx joriy `bottle_price` dan olinadi — admin o'zgartira olmaydi.
+    """
+    try:
+        count = int(count)
+    except (TypeError, ValueError):
+        return None
+    if count <= 0:
+        return None
+    async with SessionLocal() as s:
+        user = await s.get(User, user_id)
+        if not user:
+            return None
+        unit_price = await _setting_int(s, "bottle_price", BOTTLE_PRICE_DEFAULT)
+        p = Penalty(
+            user_id=user_id,
+            count=count,
+            unit_price=unit_price,
+            total=count * unit_price,
+            note=(note or "").strip() or None,
+        )
+        s.add(p)
+        await s.commit()
+        await s.refresh(p)
+        return p
+
+
+async def user_penalty_total(user_id: int) -> int:
+    async with SessionLocal() as s:
+        return int(
+            (
+                await s.execute(
+                    select(func.coalesce(func.sum(Penalty.total), 0)).where(
+                        Penalty.user_id == user_id
+                    )
+                )
+            ).scalar_one()
+            or 0
+        )
+
+
+async def penalty_totals_by_user() -> dict[int, int]:
+    """Har bir mijozning umumiy shtrafi: {user_id: total}."""
+    async with SessionLocal() as s:
+        res = await s.execute(
+            select(Penalty.user_id, func.coalesce(func.sum(Penalty.total), 0)).group_by(
+                Penalty.user_id
+            )
+        )
+        return {r[0]: int(r[1]) for r in res.all()}
+
+
+async def total_penalties() -> int:
+    """Barcha shtraflar jami (umumiy tushumga qo'shiladi)."""
+    async with SessionLocal() as s:
+        return int(
+            (
+                await s.execute(select(func.coalesce(func.sum(Penalty.total), 0)))
+            ).scalar_one()
+            or 0
+        )
 
 
 # ============================ ADMIN AUTH ============================
@@ -834,6 +1043,154 @@ async def check_admin(login: str, password: str) -> Admin | None:
         return None
 
 
+# ---- Operatorlar (super admin boshqaradi) ----
+
+def _clean_perms(sections: list[str] | None, allowed: set[str]) -> str:
+    """Ruxsat etilgan bo'lim kalitlarini tartiblab, CSV qatorga aylantiradi."""
+    if not sections:
+        return ""
+    seen = [s for s in dict.fromkeys(sections) if s in allowed]
+    return ",".join(seen)
+
+
+async def list_admins() -> Sequence[Admin]:
+    async with SessionLocal() as s:
+        res = await s.execute(select(Admin).order_by(Admin.is_super.desc(), Admin.login))
+        return res.scalars().all()
+
+
+async def get_admin(admin_id: int) -> Admin | None:
+    async with SessionLocal() as s:
+        return await s.get(Admin, admin_id)
+
+
+async def create_operator(
+    login: str, password: str, sections: list[str], allowed: set[str]
+) -> Admin | None:
+    """Yangi operator yaratadi (super admin emas). Login band bo'lsa — None."""
+    login = (login or "").strip()
+    password = password or ""
+    if not login or len(password) < 4:
+        return None
+    async with SessionLocal() as s:
+        exists = (
+            await s.execute(select(Admin).where(Admin.login == login))
+        ).scalar_one_or_none()
+        if exists:
+            return None
+        admin = Admin(
+            login=login,
+            password_hash=hash_password(password),
+            is_super=False,
+            permissions=_clean_perms(sections, allowed),
+        )
+        s.add(admin)
+        await s.commit()
+        await s.refresh(admin)
+        return admin
+
+
+async def update_operator_permissions(
+    admin_id: int, sections: list[str], allowed: set[str]
+) -> bool:
+    """Operatorning bo'lim ruxsatlarini yangilaydi (super adminga tegmaydi)."""
+    async with SessionLocal() as s:
+        admin = await s.get(Admin, admin_id)
+        if not admin or admin.is_super:
+            return False
+        admin.permissions = _clean_perms(sections, allowed)
+        await s.commit()
+        return True
+
+
+async def reset_admin_password(admin_id: int, password: str) -> bool:
+    if not password or len(password) < 4:
+        return False
+    async with SessionLocal() as s:
+        admin = await s.get(Admin, admin_id)
+        if not admin:
+            return False
+        admin.password_hash = hash_password(password)
+        await s.commit()
+        return True
+
+
+async def delete_operator(admin_id: int) -> bool:
+    """Operatorni o'chiradi. Super adminni o'chirib bo'lmaydi."""
+    async with SessionLocal() as s:
+        admin = await s.get(Admin, admin_id)
+        if not admin or admin.is_super:
+            return False
+        await s.delete(admin)
+        await s.commit()
+        return True
+
+
+# ============================ TALAB VA TAKLIFLAR (FEEDBACK) ============================
+
+async def add_feedback(user_id: int, text: str) -> Feedback | None:
+    text = (text or "").strip()
+    if not text:
+        return None
+    async with SessionLocal() as s:
+        fb = Feedback(user_id=user_id, text=text)
+        s.add(fb)
+        await s.commit()
+        await s.refresh(fb)
+        return fb
+
+
+async def list_feedback(limit: int = 200) -> list[dict]:
+    """Fikrlar ro'yxati (yangi avval) — mijoz ma'lumotlari bilan."""
+    async with SessionLocal() as s:
+        res = await s.execute(
+            select(Feedback)
+            .options(selectinload(Feedback.user))
+            .order_by(Feedback.created_at.desc())
+            .limit(limit)
+        )
+        rows = res.scalars().all()
+    return [
+        {
+            "id": f.id,
+            "text": f.text,
+            "is_read": f.is_read,
+            "created_at": f.created_at,
+            "name": f.user.full_name if f.user else "—",
+            "phone": f.user.phone if f.user else "—",
+        }
+        for f in rows
+    ]
+
+
+async def feedback_unread_count() -> int:
+    async with SessionLocal() as s:
+        return int(
+            (
+                await s.execute(
+                    select(func.count(Feedback.id)).where(Feedback.is_read == False)  # noqa: E712
+                )
+            ).scalar_one()
+            or 0
+        )
+
+
+async def mark_feedback_read(feedback_id: int) -> None:
+    async with SessionLocal() as s:
+        fb = await s.get(Feedback, feedback_id)
+        if fb and not fb.is_read:
+            fb.is_read = True
+            await s.commit()
+
+
+async def mark_all_feedback_read() -> None:
+    async with SessionLocal() as s:
+        await s.execute(
+            Feedback.__table__.update().where(Feedback.is_read == False).values(is_read=True)  # noqa: E712
+        )
+        await s.commit()
+
+
 # ============================ ESLATMALAR ============================
 
 async def users_needing_reminder(reminder_days: list[int]) -> list[tuple[User, int]]:
@@ -842,7 +1199,7 @@ async def users_needing_reminder(reminder_days: list[int]) -> list[tuple[User, i
     out: list[tuple[User, int]] = []
     current = now()
     async with SessionLocal() as s:
-        res = await s.execute(select(User))
+        res = await s.execute(select(User).where(User.deleted_at.is_(None)))
         users = res.scalars().all()
         for u in users:
             ref = u.last_order_at or u.created_at

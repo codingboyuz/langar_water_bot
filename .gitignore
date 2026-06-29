@@ -13,3 +13,10 @@ env/
 
 # Node (faqat Tailwind CSS build uchun — runtime'da kerak emas)
 node_modules/
+
+# Lokal tunnel (jprq) — internetga ochish skripti, git'ga chiqmasin
+tunnel.bat
+tunnel.py
+img1.png
+cloudflared.exe
+*.exe

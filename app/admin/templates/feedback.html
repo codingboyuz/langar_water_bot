@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Talab va takliflar{% endblock %}
+{% block subtitle %}Mijozlardan kelgan fikr-mulohazalar{% endblock %}
+{% block content %}
+
+<div class="card stagger overflow-hidden">
+  <div class="px-4 py-3.5 border-b border-[var(--line)] flex items-center gap-2">
+    <svg class="ico text-amber-500" style="width:17px;height:17px"><use href="#i-bulb"/></svg>
+    <span class="font-semibold text-[14px] text-ink-900">Talab va takliflar</span>
+    <span class="ml-1 text-[12px] text-ink-400">{{ items|length }} ta</span>
+  </div>
+
+  <div class="divide-y divide-slate-100">
+    {% for f in items %}
+    <div class="px-4 py-3.5 flex gap-3 {{ 'bg-amber-50/40' if not f.is_read }}">
+      <span class="w-9 h-9 flex-none rounded-full bg-amber-500/10 text-amber-600 flex items-center justify-center font-semibold text-[14px]">
+        {{ (f.name or '?')[0]|upper }}
+      </span>
+      <div class="min-w-0 flex-1">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="font-medium text-[13.5px] text-ink-900">{{ f.name }}</span>
+          <span class="text-[12px] text-ink-400">{{ f.phone }}</span>
+          {% if not f.is_read %}
+          <span class="inline-flex items-center text-[10.5px] text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full font-semibold">yangi</span>
+          {% endif %}
+          <span class="ml-auto text-[11.5px] text-ink-400">{{ f.created_at|dt }}</span>
+        </div>
+        <div class="text-[13.5px] text-ink-700 mt-1 whitespace-pre-wrap break-words">{{ f.text }}</div>
+      </div>
+    </div>
+    {% else %}
+    <div class="px-4 py-16 text-center text-ink-400 text-[13px]">Hali fikr-mulohaza yo'q</div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

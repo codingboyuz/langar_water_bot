@@ -145,29 +145,28 @@ async def _migrate_chat_post() -> None:
 
 
 async def _ensure_pricing() -> None:
-    """Narxlarni boshlang'ich qiymatlar bilan to'ldiradi (config.REGIONS dan).
+    """Global narxlarni boshlang'ich qiymatlar bilan to'ldiradi.
 
-    Faqat yo'q bo'lsa qo'shadi — mavjud (admin tahrirlagan) narxlarga tegmaydi.
+    Narxlar barcha hudud uchun bir xil — AppSetting kalitlarida saqlanadi
+    (water_price / courier_rate / bottle_price). Faqat yo'q bo'lsa qo'shadi —
+    mavjud (admin tahrirlagan) qiymatlarga tegmaydi.
     """
-    from sqlalchemy import select
+    from app.config import (
+        BOTTLE_PRICE_DEFAULT,
+        COURIER_RATE_DEFAULT,
+        WATER_PRICE_DEFAULT,
+    )
+    from app.db.models import AppSetting
 
-    from app.config import REGIONS
-    from app.db.models import AppSetting, Pricing
-
+    defaults = {
+        "water_price": WATER_PRICE_DEFAULT,
+        "courier_rate": COURIER_RATE_DEFAULT,
+        "bottle_price": BOTTLE_PRICE_DEFAULT,
+    }
     async with SessionLocal() as s:
-        for r in REGIONS:
-            exists = await s.execute(select(Pricing).where(Pricing.region_key == r.key))
-            if exists.scalar_one_or_none() is None:
-                s.add(
-                    Pricing(
-                        region_key=r.key,
-                        region_name=r.name,
-                        water_price=r.price,
-                        courier_rate=r.courier_rate,
-                    )
-                )
-        if await s.get(AppSetting, "bottle_price") is None:
-            s.add(AppSetting(key="bottle_price", value="0"))
+        for key, val in defaults.items():
+            if await s.get(AppSetting, key) is None:
+                s.add(AppSetting(key=key, value=str(val)))
         await s.commit()
 
 
@@ -199,6 +198,12 @@ async def _ensure_columns() -> None:
     # (jadval, ustun, ta'rif)
     migrations = [
         ("couriers", "lang", "VARCHAR(5) DEFAULT 'uz'"),
+        ("couriers", "latitude", "DOUBLE PRECISION"),
+        ("couriers", "longitude", "DOUBLE PRECISION"),
+        ("couriers", "geo_address", "TEXT"),
+        ("users", "deleted_at", "DATETIME"),
+        ("admins", "is_super", "BOOLEAN DEFAULT 0"),
+        ("admins", "permissions", "VARCHAR(255) DEFAULT ''"),
     ]
     async with engine.begin() as conn:
         for table, column, ddl in migrations:
@@ -220,8 +225,17 @@ async def _ensure_admin() -> None:
 
     async with SessionLocal() as session:
         res = await session.execute(select(Admin).where(Admin.login == cfg.admin_login))
-        if res.scalar_one_or_none() is None:
+        admin = res.scalar_one_or_none()
+        if admin is None:
             session.add(
-                Admin(login=cfg.admin_login, password_hash=hash_password(cfg.admin_password))
+                Admin(
+                    login=cfg.admin_login,
+                    password_hash=hash_password(cfg.admin_password),
+                    is_super=True,
+                )
             )
+            await session.commit()
+        elif not admin.is_super:
+            # .env dagi asosiy admin doimo super admin bo'lib qoladi
+            admin.is_super = True
             await session.commit()

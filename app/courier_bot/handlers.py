@@ -21,6 +21,7 @@ from app import events
 from app.config import COURIER_PROVINCES, settings
 from app.courier_bot.common import CB_DELIVERED, CB_PROCESS, client_confirm_keyboard
 from app.db import service as svc
+from app.geocode import resolve_text_location, reverse_geocode
 from app.i18n import DEFAULT_LANG, LANG_BUTTONS, LANGS, t
 from app.utils import fmt_date, money
 
@@ -34,6 +35,7 @@ class Register(StatesGroup):
     name = State()
     phone = State()
     region = State()
+    location = State()
 
 
 class Deliver(StatesGroup):
@@ -55,6 +57,13 @@ def _lang_kb() -> ReplyKeyboardMarkup:
 def _phone_kb(lang: str) -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[[KeyboardButton(text=t("btn_share_phone", lang), request_contact=True)]],
+        resize_keyboard=True,
+    )
+
+
+def _location_kb(lang: str) -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text=t("btn_share_location", lang), request_location=True)]],
         resize_keyboard=True,
     )
 
@@ -147,13 +156,23 @@ async def reg_region(message: Message, state: FSMContext):
     if message.text not in COURIER_PROVINCES:
         await message.answer(t("c_ask_region", lang), reply_markup=_region_kb())
         return
+    await state.update_data(region=message.text)
+    await message.answer(t("ask_location", lang), reply_markup=_location_kb(lang))
+    await state.set_state(Register.location)
+
+
+async def _finish_courier_register(message: Message, state: FSMContext, lang: str,
+                                   lat: float | None, lon: float | None, address: str | None):
     data = await state.get_data()
     courier = await svc.register_courier(
         telegram_id=message.from_user.id,
         name=data["name"],
         phone=data["phone"],
-        region=message.text,
+        region=data["region"],
         lang=lang,
+        latitude=lat,
+        longitude=lon,
+        geo_address=address,
     )
     await state.clear()
     await message.answer(
@@ -162,6 +181,36 @@ async def reg_region(message: Message, state: FSMContext):
         ),
         reply_markup=_main_menu_kb(lang),
     )
+
+
+@router.message(Register.location, F.location)
+async def reg_location(message: Message, state: FSMContext):
+    """Telefondan yuborilgan lokatsiya."""
+    lang = await _lang_of(message.from_user.id, state)
+    lat = message.location.latitude
+    lon = message.location.longitude
+    address = await reverse_geocode(lat, lon) or f"{lat:.5f}, {lon:.5f}"
+    await message.answer(t("detected_address", lang).format(address=address))
+    await _finish_courier_register(message, state, lang, lat, lon, address)
+
+
+@router.message(Register.location, F.text)
+async def reg_location_text(message: Message, state: FSMContext):
+    """Web/Desktop: xarita havolasi, koordinata yoki manzil matni."""
+    lang = await _lang_of(message.from_user.id, state)
+    resolved = await resolve_text_location(message.text)
+    if not resolved:
+        await message.answer(t("location_not_found", lang), reply_markup=_location_kb(lang))
+        return
+    lat, lon, address = resolved
+    await message.answer(t("detected_address", lang).format(address=address))
+    await _finish_courier_register(message, state, lang, lat, lon, address)
+
+
+@router.message(Register.location)
+async def reg_location_invalid(message: Message, state: FSMContext):
+    lang = await _lang_of(message.from_user.id, state)
+    await message.answer(t("ask_location", lang), reply_markup=_location_kb(lang))
 
 
 # --------------------------- buyurtmani bajarish ---------------------------

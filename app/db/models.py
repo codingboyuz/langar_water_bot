@@ -36,6 +36,9 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
     last_order_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     last_reminder_day: Mapped[int] = mapped_column(Integer, default=0)  # oxirgi yuborilgan eslatma chegarasi
+    # Yumshoq o'chirish (arxiv): NULL — faol; sana — arxivlangan (shu sanadan
+    # CLIENT_ARCHIVE_DAYS kun ichida qaytmasa, avtomatik butunlay o'chadi).
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
 
     orders: Mapped[list["Order"]] = relationship(back_populates="user")
 
@@ -49,6 +52,9 @@ class Courier(Base):
     phone: Mapped[str] = mapped_column(String(32))
     lang: Mapped[str] = mapped_column(String(5), default="uz")
     region: Mapped[str] = mapped_column(String(128))
+    latitude: Mapped[float | None] = mapped_column(nullable=True)
+    longitude: Mapped[float | None] = mapped_column(nullable=True)
+    geo_address: Mapped[str | None] = mapped_column(Text, nullable=True)  # geokodlash natijasi
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
 
@@ -107,31 +113,63 @@ class ChatMessage(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now, index=True)
 
 
+class Penalty(Base):
+    """Baklashka shtrafi — qaytarilmagan baklashka uchun mijozga qo'lda yoziladi.
+
+    Admin faqat `count` (qaytarilmagan baklashka soni) ni kiritadi; `unit_price`
+    yozilgan paytdagi baklashka narxining nusxasi (admin narxni o'zgartira
+    olmaydi). `total` = count × unit_price — umumiy tushumga qo'shiladi.
+    """
+    __tablename__ = "penalties"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    count: Mapped[int] = mapped_column(Integer)
+    unit_price: Mapped[int] = mapped_column(Integer)   # baklashka narxi (snapshot)
+    total: Mapped[int] = mapped_column(Integer)        # = count * unit_price
+    note: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now, index=True)
+
+    user: Mapped["User"] = relationship()
+
+
+class Feedback(Base):
+    """Mijozning talab/taklifi (fikr) — admin panelda ko'rinadi."""
+    __tablename__ = "feedback"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    text: Mapped[str] = mapped_column(Text)
+    is_read: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now, index=True)
+
+    user: Mapped["User"] = relationship()
+
+
 class Admin(Base):
+    """Admin/operator hisobi.
+
+    `is_super=True` — super admin: hamma bo'limga kiradi va operator yaratadi.
+    `is_super=False` — operator: faqat `permissions` dagi bo'limlarga kiradi.
+    `permissions` — vergul bilan ajratilgan bo'lim kalitlari (masalan
+    "orders,clients,chat"). Super adminda e'tiborga olinmaydi.
+    """
     __tablename__ = "admins"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     login: Mapped[str] = mapped_column(String(64), unique=True)
     password_hash: Mapped[str] = mapped_column(String(255))
+    is_super: Mapped[bool] = mapped_column(Boolean, default=False)
+    permissions: Mapped[str] = mapped_column(String(255), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
 
 
-class Pricing(Base):
-    """Hudud bo'yicha narxlar — admin paneldan tahrirlanadi.
-
-    Boshlang'ich qiymatlar config.REGIONS dan seed qilinadi (init_db).
-    """
-    __tablename__ = "pricing"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    region_key: Mapped[str] = mapped_column(String(64), unique=True, index=True)
-    region_name: Mapped[str] = mapped_column(String(128))
-    water_price: Mapped[int] = mapped_column(Integer)    # 1 dona suv narxi (so'm)
-    courier_rate: Mapped[int] = mapped_column(Integer)   # kuryerga 1 dona uchun (so'm)
-
-
 class AppSetting(Base):
-    """Global sozlamalar (kalit-qiymat) — masalan baklashka narxi."""
+    """Global sozlamalar (kalit-qiymat).
+
+    Narxlar shu yerda saqlanadi (barcha hudud uchun bir xil):
+    water_price, courier_rate, bottle_price.
+    """
     __tablename__ = "app_settings"
 
     key: Mapped[str] = mapped_column(String(64), primary_key=True)

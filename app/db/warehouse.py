@@ -228,6 +228,26 @@ async def fifo_outbound(
 
 # ============================ QOLDIQ ============================
 
+async def available_stock(product_id: int | None = None) -> int:
+    """Sotuvga tayyor qoldiq (dona). product_id berilmasa — standart mahsulot."""
+    async with SessionLocal() as s:
+        if product_id is None:
+            prod = (
+                await s.execute(select(Product).where(Product.is_default == True))  # noqa: E712
+            ).scalars().first()
+            if prod is None:
+                return 0
+            product_id = prod.id
+        total = (
+            await s.execute(
+                select(func.coalesce(func.sum(Batch.remaining), 0)).where(
+                    Batch.product_id == product_id
+                )
+            )
+        ).scalar_one()
+        return int(total or 0)
+
+
 async def current_stock() -> dict:
     """Joriy ombor qoldig'i: har bir mahsulot bo'yicha dona, qiymat, o'rtacha tannarx."""
     async with SessionLocal() as s:

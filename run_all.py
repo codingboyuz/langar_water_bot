@@ -26,7 +26,7 @@ from app.client_bot.handlers import router as client_router
 from app.config import settings
 from app.courier_bot.handlers import router as courier_router
 from app.db.base import init_db
-from app.reminders import run_reminders
+from app.reminders import run_purge, run_reminders
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
 log = logging.getLogger("run_all")
@@ -60,6 +60,7 @@ async def main() -> None:
     # --- Eslatma scheduler ---
     scheduler = AsyncIOScheduler()
     scheduler.add_job(run_reminders, "cron", hour=10, minute=0)
+    scheduler.add_job(run_purge, "cron", hour=3, minute=0)
     scheduler.start()
 
     log.info("Hammasi ishga tushdi ✅  Admin: http://%s:%s", settings.admin_host, settings.admin_port)

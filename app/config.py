@@ -79,6 +79,18 @@ def detect_region(address: str | None) -> Region | None:
 MIN_BOTTLES = 2
 MAX_BOTTLES = 5
 
+# === Global narxlar (boshlang'ich qiymatlar) ===
+# Narxlar barcha hududlar uchun bir xil. Admin paneldan tahrirlanadi
+# (AppSetting: water_price / courier_rate / bottle_price). REGIONS ro'yxati
+# faqat hudud NOMLARI va lokatsiyadan aniqlash uchun qoladi — narx uchun emas.
+WATER_PRICE_DEFAULT = 22000    # 1 dona suv narxi (so'm)
+COURIER_RATE_DEFAULT = 3000    # kuryerga 1 dona yetkazgani uchun (so'm)
+BOTTLE_PRICE_DEFAULT = 0       # 1 dona baklashka shtrafi (qaytarilmasa) — admin kiritadi
+
+# Arxivlangan (yumshoq o'chirilgan) mijoz shu kun ichida qaytmasa — avtomatik
+# butunlay o'chadi. ~3 oy.
+CLIENT_ARCHIVE_DAYS = 90
+
 # Bonus chegaralari
 CLIENT_BONUS_STEP = 100      # mijoz har 100 ta suvda bonus oladi
 COURIER_DAILY_BONUS_STEP = 120   # kuryer kuniga 120 ta yetkazsa

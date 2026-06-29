@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Ruxsat yo'q{% endblock %}
+{% block subtitle %}Sizga hali bo'lim biriktirilmagan{% endblock %}
+{% block content %}
+<div class="card stagger p-10 text-center max-w-lg mx-auto">
+  <div class="w-14 h-14 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mx-auto mb-4">
+    <svg class="ico" style="width:26px;height:26px"><use href="#i-warn"/></svg>
+  </div>
+  <h2 class="font-semibold text-[16px] text-ink-900 mb-1.5">Bo'lim ruxsati yo'q</h2>
+  <p class="text-[13px] text-ink-500 leading-relaxed">
+    Administrator sizga hali biror bo'lim uchun ruxsat bermagan.<br>
+    Iltimos, super admin bilan bog'laning.
+  </p>
+  <a href="/logout" class="btn inline-flex items-center gap-1.5 mt-5 bg-ink-900 hover:bg-ink-800 text-white px-4 py-2 rounded-lg text-[13px] font-medium">
+    <svg class="ico" style="width:14px;height:14px"><use href="#i-logout"/></svg> Chiqish
+  </a>
+</div>
+{% endblock %}

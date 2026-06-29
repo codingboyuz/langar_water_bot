@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+{% block title %}Operatorlar{% endblock %}
+{% block subtitle %}Operator yarating va har bo'lim uchun ruxsat bering{% endblock %}
+{% block content %}
+
+{% if saved %}
+<div class="card border-emerald-200 bg-emerald-50 px-4 py-3 mb-4 text-[13px] text-emerald-800 flex items-center gap-2 stagger">
+  <svg class="ico text-emerald-600" style="width:16px;height:16px"><use href="#i-check"/></svg>
+  {% if saved=='create' %}Operator yaratildi.
+  {% elif saved=='perms' %}Ruxsatlar yangilandi.
+  {% elif saved=='password' %}Parol o'zgartirildi.
+  {% elif saved=='delete' %}Operator o'chirildi.
+  {% else %}Saqlandi.{% endif %}
+</div>
+{% endif %}
+{% if err %}
+<div class="card border-rose-200 bg-rose-50 px-4 py-3 mb-4 text-[13px] text-rose-700 flex items-center gap-2 stagger">
+  <svg class="ico text-rose-600" style="width:16px;height:16px"><use href="#i-warn"/></svg>
+  {% if err=='create' %}Operator yaratilmadi — login band yoki parol juda qisqa (kamida 4 belgi).
+  {% elif err=='password' %}Parol juda qisqa (kamida 4 belgi).
+  {% else %}Xatolik yuz berdi.{% endif %}
+</div>
+{% endif %}
+
+<!-- Yangi operator yaratish -->
+<div class="card stagger p-5 mb-4">
+  <div class="flex items-center gap-2 mb-4">
+    <span class="w-8 h-8 rounded-lg bg-brand-50 flex items-center justify-center text-brand-600">
+      <svg class="ico" style="width:16px;height:16px"><use href="#i-plus"/></svg>
+    </span>
+    <div>
+      <h2 class="font-semibold text-[15px] text-ink-900">Yangi operator</h2>
+      <div class="text-[12px] text-ink-500">Login, parol va kira oladigan bo'limlarni belgilang</div>
+    </div>
+  </div>
+  <form method="post" action="/operators/create" class="space-y-4">
+    <div class="grid sm:grid-cols-2 gap-3 max-w-xl">
+      <div>
+        <label class="block text-[12px] text-ink-500 mb-1">Login</label>
+        <input name="login" required autocomplete="off"
+               class="w-full border border-slate-200 rounded-lg px-3 py-2 text-[14px] outline-none focus:border-brand-500">
+      </div>
+      <div>
+        <label class="block text-[12px] text-ink-500 mb-1">Parol (kamida 4 belgi)</label>
+        <input name="password" required minlength="4" autocomplete="new-password"
+               class="w-full border border-slate-200 rounded-lg px-3 py-2 text-[14px] outline-none focus:border-brand-500">
+      </div>
+    </div>
+    <div>
+      <div class="text-[12px] text-ink-500 mb-2">Bo'lim ruxsatlari</div>
+      <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+        {% for key,label in ADMIN_SECTIONS %}
+        <label class="flex items-center gap-2 border border-slate-200 rounded-lg px-3 py-2 text-[13px] text-ink-700 cursor-pointer hover:bg-slate-50">
+          <input type="checkbox" name="sections" value="{{ key }}" class="accent-brand-600 w-4 h-4">
+          {{ label }}
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+    <div>
+      <button class="btn inline-flex items-center gap-1.5 bg-brand-600 hover:bg-brand-700 text-white px-5 py-2.5 rounded-lg font-medium shadow-sm shadow-brand-600/20">
+        <svg class="ico" style="width:15px;height:15px"><use href="#i-plus"/></svg> Operator qo'shish
+      </button>
+    </div>
+  </form>
+</div>
+
+<!-- Mavjud hisoblar -->
+<div class="flex items-center gap-2 mb-3 px-1">
+  <svg class="ico text-ink-400" style="width:15px;height:15px"><use href="#i-shield"/></svg>
+  <span class="font-semibold text-[13.5px] text-ink-800">Hisoblar</span>
+  <span class="text-[12px] text-ink-400">— ruxsat o'zgarishi operator qayta kirgach kuchga kiradi</span>
+</div>
+<div class="space-y-3">
+  {% for a in admins %}
+  <div class="card stagger p-5">
+    <div class="flex items-center gap-3 flex-wrap mb-3">
+      <span class="w-9 h-9 rounded-full bg-brand-500/10 text-brand-600 flex items-center justify-center font-semibold text-[14px]">
+        {{ a.login[0]|upper }}
+      </span>
+      <div class="min-w-0">
+        <div class="font-semibold text-[14px] text-ink-900">{{ a.login }}</div>
+        {% if a.is_super %}
+          <span class="inline-flex items-center gap-1 text-[11px] text-violet-700 bg-violet-50 px-2 py-0.5 rounded-full font-medium">
+            <svg class="ico" style="width:11px;height:11px"><use href="#i-shield"/></svg> Super admin — hamma bo'lim</span>
+        {% else %}
+          <span class="text-[11px] text-ink-400">Operator</span>
+        {% endif %}
+      </div>
+    </div>
+
+    {% if a.is_super %}
+      <div class="text-[12.5px] text-ink-400">Super admin barcha bo'limga kiradi va operatorlarni boshqaradi. Tahrirlanmaydi.</div>
+    {% else %}
+      <!-- Ruxsatlarni tahrirlash -->
+      <form method="post" action="/operators/permissions" class="border-t border-[var(--line)] pt-3">
+        <input type="hidden" name="admin_id" value="{{ a.id }}">
+        <div class="text-[12px] text-ink-500 mb-2">Bo'lim ruxsatlari</div>
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 mb-3">
+          {% for key,label in ADMIN_SECTIONS %}
+          <label class="flex items-center gap-2 border border-slate-200 rounded-lg px-3 py-2 text-[13px] text-ink-700 cursor-pointer hover:bg-slate-50">
+            <input type="checkbox" name="sections" value="{{ key }}" class="accent-brand-600 w-4 h-4"
+                   {{ 'checked' if key in a.perms }}>
+            {{ label }}
+          </label>
+          {% endfor %}
+        </div>
+        <button class="btn inline-flex items-center gap-1.5 bg-ink-900 hover:bg-ink-800 text-white px-4 py-2 rounded-lg text-[12.5px] font-medium">
+          <svg class="ico" style="width:13px;height:13px"><use href="#i-check"/></svg> Ruxsatlarni saqlash
+        </button>
+      </form>
+
+      <!-- Parol va o'chirish -->
+      <div class="flex items-end gap-2 flex-wrap border-t border-[var(--line)] pt-3 mt-3">
+        <form method="post" action="/operators/password" class="flex items-end gap-2">
+          <input type="hidden" name="admin_id" value="{{ a.id }}">
+          <div>
+            <label class="block text-[12px] text-ink-500 mb-1">Yangi parol</label>
+            <input name="password" required minlength="4" autocomplete="new-password" placeholder="kamida 4 belgi"
+                   class="w-44 border border-slate-200 rounded-lg px-3 py-1.5 text-[13px] outline-none focus:border-brand-500">
+          </div>
+          <button class="btn inline-flex items-center gap-1.5 border border-[var(--line)] text-ink-600 hover:text-brand-600 hover:border-brand-200 px-3 py-1.5 rounded-lg text-[12.5px] font-medium">
+            <svg class="ico" style="width:13px;height:13px"><use href="#i-rotate"/></svg> Parolni yangilash
+          </button>
+        </form>
+        <div class="ml-auto">
+          <form method="post" action="/operators/delete"
+                onsubmit="return confirm('«{{ a.login }}» operatorni o\'chirasizmi?');">
+            <input type="hidden" name="admin_id" value="{{ a.id }}">
+            <button title="O'chirish" class="btn inline-flex items-center gap-1.5 border border-rose-200 text-rose-600 hover:bg-rose-50 px-3 py-1.5 rounded-lg text-[12.5px] font-medium">
+              <svg class="ico" style="width:13px;height:13px"><use href="#i-trash"/></svg> O'chirish
+            </button>
+          </form>
+        </div>
+      </div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

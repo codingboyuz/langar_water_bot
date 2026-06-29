@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Narxlar{% endblock %}
-{% block subtitle %}Suv narxi, kuryer stavkasi va baklashka narxini boshqaring{% endblock %}
+{% block subtitle %}Suv, kuryer stavkasi va baklashka narxi — barcha hududlar uchun umumiy{% endblock %}
 {% block content %}
 
 {% if saved %}
@@ -10,65 +10,59 @@
 </div>
 {% endif %}
 
-<form method="post" action="/pricing/save" class="space-y-4">
+<form method="post" action="/pricing/save" class="space-y-4 max-w-2xl">
 
-  <!-- Baklashka narxi (global) -->
+  <!-- Suv narxi -->
   <div class="card stagger p-5">
     <div class="flex items-center gap-2 mb-3">
       <span class="w-8 h-8 rounded-lg bg-brand-50 flex items-center justify-center text-brand-600">
         <svg class="ico" style="width:16px;height:16px"><use href="#i-droplet"/></svg>
       </span>
       <div>
-        <h2 class="font-semibold text-[15px] text-ink-900">Baklashka narxi</h2>
-        <div class="text-[12px] text-ink-500">Bo'sh baklashka (tara) narxi — barcha hududlar uchun umumiy</div>
+        <h2 class="font-semibold text-[15px] text-ink-900">Suv narxi</h2>
+        <div class="text-[12px] text-ink-500">1 dona suv narxi — barcha hududlar uchun bir xil</div>
       </div>
     </div>
     <div class="flex items-center gap-2 max-w-xs">
-      <input name="bottle_price" value="{{ bottle_price }}" inputmode="numeric"
+      <input name="water_price" value="{{ pricing.water_price }}" inputmode="numeric"
              class="w-full border border-slate-200 rounded-lg px-3 py-2 text-[14px] tabular-nums outline-none focus:border-brand-500">
       <span class="text-ink-500 text-[13px]">so'm</span>
     </div>
   </div>
 
-  <!-- Hudud bo'yicha narxlar -->
-  <div class="card stagger overflow-hidden">
-    <div class="px-4 py-3.5 border-b border-[var(--line)] flex items-center gap-2">
-      <svg class="ico text-brand-600" style="width:17px;height:17px"><use href="#i-wallet"/></svg>
-      <span class="font-semibold text-[14px] text-ink-900">Hudud bo'yicha narxlar</span>
+  <!-- Kuryer stavkasi -->
+  <div class="card stagger p-5">
+    <div class="flex items-center gap-2 mb-3">
+      <span class="w-8 h-8 rounded-lg bg-brand-50 flex items-center justify-center text-brand-600">
+        <svg class="ico" style="width:16px;height:16px"><use href="#i-truck"/></svg>
+      </span>
+      <div>
+        <h2 class="font-semibold text-[15px] text-ink-900">Kuryer stavkasi</h2>
+        <div class="text-[12px] text-ink-500">Kuryerga 1 dona yetkazgani uchun — barcha hududlar uchun bir xil</div>
+      </div>
     </div>
-    <div class="overflow-x-auto">
-    <table class="w-full text-[13px]">
-      <thead>
-        <tr class="bg-slate-50 text-ink-500 text-left border-b border-[var(--line)]">
-          <th class="px-4 py-3 font-semibold">Hudud</th>
-          <th class="px-4 py-3 font-semibold">Suv narxi (1 dona)</th>
-          <th class="px-4 py-3 font-semibold">Kuryer stavkasi (1 dona)</th>
-        </tr>
-      </thead>
-      <tbody class="divide-y divide-slate-100">
-        {% for p in pricing %}
-        <tr class="row-tr hover:bg-slate-50/70">
-          <td class="px-4 py-3 font-medium text-ink-900">{{ p.region_name }}</td>
-          <td class="px-4 py-3">
-            <div class="flex items-center gap-2 max-w-[220px]">
-              <input name="water_{{ p.region_key }}" value="{{ p.water_price }}" inputmode="numeric"
-                     class="w-full border border-slate-200 rounded-lg px-3 py-1.5 tabular-nums outline-none focus:border-brand-500">
-              <span class="text-ink-400 text-[12px]">so'm</span>
-            </div>
-          </td>
-          <td class="px-4 py-3">
-            <div class="flex items-center gap-2 max-w-[220px]">
-              <input name="rate_{{ p.region_key }}" value="{{ p.courier_rate }}" inputmode="numeric"
-                     class="w-full border border-slate-200 rounded-lg px-3 py-1.5 tabular-nums outline-none focus:border-brand-500">
-              <span class="text-ink-400 text-[12px]">so'm</span>
-            </div>
-          </td>
-        </tr>
-        {% else %}
-        <tr><td colspan="3" class="px-4 py-14 text-center text-ink-400">Narxlar topilmadi</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    <div class="flex items-center gap-2 max-w-xs">
+      <input name="courier_rate" value="{{ pricing.courier_rate }}" inputmode="numeric"
+             class="w-full border border-slate-200 rounded-lg px-3 py-2 text-[14px] tabular-nums outline-none focus:border-brand-500">
+      <span class="text-ink-500 text-[13px]">so'm</span>
+    </div>
+  </div>
+
+  <!-- Baklashka narxi (shtraf) -->
+  <div class="card stagger p-5">
+    <div class="flex items-center gap-2 mb-3">
+      <span class="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center text-amber-600">
+        <svg class="ico" style="width:16px;height:16px"><use href="#i-package"/></svg>
+      </span>
+      <div>
+        <h2 class="font-semibold text-[15px] text-ink-900">Baklashka narxi (shtraf)</h2>
+        <div class="text-[12px] text-ink-500">1 dona baklashka qaytarilmasa olinadigan shtraf. Suvdan alohida hisoblanadi.</div>
+      </div>
+    </div>
+    <div class="flex items-center gap-2 max-w-xs">
+      <input name="bottle_price" value="{{ pricing.bottle_price }}" inputmode="numeric"
+             class="w-full border border-slate-200 rounded-lg px-3 py-2 text-[14px] tabular-nums outline-none focus:border-amber-500">
+      <span class="text-ink-500 text-[13px]">so'm</span>
     </div>
   </div>
 

@@ -34,16 +34,26 @@ async def run_reminders() -> None:
             log.info("Eslatma yuborildi: %s (%d kun)", user.phone, day)
 
 
+async def run_purge() -> None:
+    """Muddati o'tgan arxiv (yumshoq o'chirilgan) mijozlarni butunlay o'chiradi."""
+    n = await svc.purge_expired_users()
+    if n:
+        log.info("Arxivdan butunlay o'chirildi: %d mijoz", n)
+
+
 async def main() -> None:
     await init_db()
     scheduler = AsyncIOScheduler()
     # Har kuni soat 10:00 da tekshiradi (kerak bo'lsa o'zgartiring)
     scheduler.add_job(run_reminders, "cron", hour=10, minute=0)
+    # Har kuni 03:00 da muddati o'tgan arxiv mijozlarni tozalaydi
+    scheduler.add_job(run_purge, "cron", hour=3, minute=0)
     scheduler.start()
-    log.info("Eslatma scheduler ishga tushdi ✅ (kunlik 10:00)")
+    log.info("Eslatma scheduler ishga tushdi ✅ (eslatma 10:00, arxiv tozalash 03:00)")
 
     # Ishga tushganda bir marta tekshiramiz
     await run_reminders()
+    await run_purge()
 
     # Doimiy ishlash
     while True:

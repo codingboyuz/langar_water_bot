@@ -9,10 +9,11 @@ from aiogram.types import CallbackQuery, Message, ReplyKeyboardRemove
 from app import events
 from app.config import REGION_BY_NAME, REGIONS, detect_region
 from app.client_bot import keyboards as kb
-from app.client_bot.states import NewOrder, Register, Settings
+from app.client_bot.states import Feedback, NewOrder, Register, Settings
 from app.courier_bot.common import CB_CLIENT_CONFIRM
 from app.db import service as svc
-from app.geocode import reverse_geocode
+from app.db import warehouse as wh
+from app.geocode import resolve_text_location, reverse_geocode
 from app.i18n import (
     DEFAULT_LANG,
     LANG_BUTTONS,
@@ -47,6 +48,9 @@ async def cmd_start(message: Message, state: FSMContext):
     await state.clear()
     user = await svc.get_user_by_tg(message.from_user.id)
     if user:
+        if user.deleted_at:
+            # Arxivlangan mijoz qaytdi — profili ma'lumotlari bilan tiklanadi
+            await svc.restore_user(user.id)
         await message.answer(t("menu_title", user.lang), reply_markup=kb.main_menu_kb(user.lang))
         return
     await message.answer(t("welcome", DEFAULT_LANG), reply_markup=kb.start_kb(DEFAULT_LANG))
@@ -116,16 +120,35 @@ async def reg_extra_input(message: Message, state: FSMContext):
     await state.set_state(Register.location)
 
 
-@router.message(Register.location, F.location)
-async def reg_location(message: Message, state: FSMContext):
-    lang = await _lang_of(message, state)
-    lat = message.location.latitude
-    lon = message.location.longitude
-    address = await reverse_geocode(lat, lon) or f"{lat:.5f}, {lon:.5f}"
+async def _save_reg_location(message: Message, state: FSMContext, lang: str,
+                             lat: float, lon: float, address: str):
+    """Aniqlangan lokatsiyani saqlab, keyingi (uy) bosqichiga o'tadi."""
     await state.update_data(latitude=lat, longitude=lon, geo_address=address)
     await message.answer(t("detected_address", lang).format(address=address))
     await message.answer(t("ask_house", lang), reply_markup=ReplyKeyboardRemove())
     await state.set_state(Register.house)
+
+
+@router.message(Register.location, F.location)
+async def reg_location(message: Message, state: FSMContext):
+    """Telefondan yuborilgan lokatsiya."""
+    lang = await _lang_of(message, state)
+    lat = message.location.latitude
+    lon = message.location.longitude
+    address = await reverse_geocode(lat, lon) or f"{lat:.5f}, {lon:.5f}"
+    await _save_reg_location(message, state, lang, lat, lon, address)
+
+
+@router.message(Register.location, F.text)
+async def reg_location_text(message: Message, state: FSMContext):
+    """Web/Desktop: xarita havolasi, koordinata yoki manzil matni."""
+    lang = await _lang_of(message, state)
+    resolved = await resolve_text_location(message.text)
+    if not resolved:
+        await message.answer(t("location_not_found", lang), reply_markup=kb.location_kb(lang))
+        return
+    lat, lon, address = resolved
+    await _save_reg_location(message, state, lang, lat, lon, address)
 
 
 @router.message(Register.location)
@@ -187,7 +210,25 @@ async def reg_confirm(message: Message, state: FSMContext):
     await message.answer(t("btn_confirm", lang), reply_markup=kb.confirm_edit_kb(lang))
 
 
-# --------------------------- Sozlamalar (til) ---------------------------
+# --------------------------- Sozlamalar (til / lokatsiya) ---------------------------
+
+@router.message(Settings.menu)
+async def settings_menu(message: Message, state: FSMContext):
+    lang = await _lang_of(message, state)
+    if _matches(message.text, "btn_set_lang"):
+        await message.answer(t("choose_lang", lang), reply_markup=kb.lang_kb())
+        await state.set_state(Settings.lang)
+        return
+    if _matches(message.text, "btn_set_location"):
+        await message.answer(t("ask_location", lang), reply_markup=kb.location_kb(lang, cancel=True))
+        await state.set_state(Settings.location)
+        return
+    if _matches(message.text, "btn_cancel"):
+        await state.clear()
+        await message.answer(t("menu_title", lang), reply_markup=kb.main_menu_kb(lang))
+        return
+    await message.answer(t("settings_title", lang), reply_markup=kb.settings_menu_kb(lang))
+
 
 @router.message(Settings.lang)
 async def settings_lang(message: Message, state: FSMContext):
@@ -200,45 +241,71 @@ async def settings_lang(message: Message, state: FSMContext):
     await message.answer(t("choose_lang", DEFAULT_LANG), reply_markup=kb.lang_kb())
 
 
-# --------------------------- Yangi buyurtma ---------------------------
+async def _save_user_location(message: Message, state: FSMContext, lang: str,
+                              lat: float, lon: float, address: str):
+    await svc.update_user_location(message.from_user.id, lat, lon, address)
+    await state.clear()
+    await message.answer(
+        t("location_updated", lang).format(address=address),
+        reply_markup=kb.main_menu_kb(lang),
+    )
 
-@router.message(NewOrder.location, F.location)
-async def order_location(message: Message, state: FSMContext):
-    """Yetkazish manzilini qabul qiladi (joriy yoki xaritadan istalgan joy)."""
-    user = await svc.get_user_by_tg(message.from_user.id)
-    lang = user.lang if user else DEFAULT_LANG
+
+@router.message(Settings.location, F.location)
+async def settings_location(message: Message, state: FSMContext):
+    lang = await _lang_of(message, state)
     lat = message.location.latitude
     lon = message.location.longitude
     address = await reverse_geocode(lat, lon) or f"{lat:.5f}, {lon:.5f}"
-    await state.update_data(latitude=lat, longitude=lon, geo_address=address)
-
-    region = detect_region(address)
-    if region:
-        await state.update_data(region=region.name)
-        await message.answer(t("detected_address", lang).format(address=address))
-        await message.answer(t("order_choose_count", lang), reply_markup=kb.count_kb(lang))
-        await state.set_state(NewOrder.count)
-    else:
-        # hudud aniqlanmadi — qo'lda tanlanadi
-        await message.answer(t("detected_address", lang).format(address=address))
-        await message.answer(t("order_region_undetected", lang), reply_markup=kb.region_kb(lang))
-        await state.set_state(NewOrder.region)
+    await _save_user_location(message, state, lang, lat, lon, address)
 
 
-@router.message(NewOrder.location)
-async def order_location_invalid(message: Message, state: FSMContext):
+@router.message(Settings.location, F.text)
+async def settings_location_text(message: Message, state: FSMContext):
+    lang = await _lang_of(message, state)
+    if _matches(message.text, "btn_cancel"):
+        await state.clear()
+        await message.answer(t("menu_title", lang), reply_markup=kb.main_menu_kb(lang))
+        return
+    resolved = await resolve_text_location(message.text)
+    if not resolved:
+        await message.answer(t("location_not_found", lang), reply_markup=kb.location_kb(lang, cancel=True))
+        return
+    lat, lon, address = resolved
+    await _save_user_location(message, state, lang, lat, lon, address)
+
+
+# --------------------------- Talab va takliflar ---------------------------
+
+@router.message(Feedback.text)
+async def feedback_text(message: Message, state: FSMContext):
     user = await svc.get_user_by_tg(message.from_user.id)
     lang = user.lang if user else DEFAULT_LANG
     if _matches(message.text, "btn_cancel"):
         await state.clear()
-        await message.answer(t("order_canceled", lang), reply_markup=kb.main_menu_kb(lang))
+        await message.answer(t("menu_title", lang), reply_markup=kb.main_menu_kb(lang))
         return
-    await message.answer(t("order_send_location", lang), reply_markup=kb.order_location_kb(lang))
+    text = (message.text or "").strip()
+    if not text:
+        await message.answer(t("feedback_ask", lang), reply_markup=kb.cancel_kb(lang))
+        return
+    await svc.add_feedback(user.id, text)
+    events.publish(
+        "feedback",
+        {"user_id": user.id, "name": user.full_name, "preview": text[:80]},
+    )
+    await state.clear()
+    await message.answer(t("feedback_sent", lang), reply_markup=kb.main_menu_kb(lang))
+
+
+# --------------------------- Yangi buyurtma ---------------------------
+# Lokatsiya so'ralmaydi — buyurtma mijoz ro'yxatdan o'tgan manzilga yetkaziladi
+# (qarang: menu_router -> "menu_new_order").
 
 
 @router.message(NewOrder.region, F.text)
 async def order_region(message: Message, state: FSMContext):
-    """Zaxira: hudud lokatsiyadan aniqlanmaganda qo'lda tanlash."""
+    """Zaxira: ro'yxatdagi hudud noaniq bo'lsa qo'lda tanlash."""
     user = await svc.get_user_by_tg(message.from_user.id)
     lang = user.lang if user else DEFAULT_LANG
     if _matches(message.text, "btn_cancel"):
@@ -267,9 +334,20 @@ async def order_count(message: Message, state: FSMContext):
         await message.answer(t("order_count_invalid", lang), reply_markup=kb.count_kb(lang))
         return
     count = int(text)
+    # Ombor qoldig'i yetmasa — buyurtma qabul qilinmaydi
+    available = await wh.available_stock()
+    if count > available:
+        await state.clear()
+        await message.answer(
+            t("out_of_stock", lang).format(available=available),
+            reply_markup=kb.main_menu_kb(lang),
+        )
+        return
     data = await state.get_data()
     region = REGION_BY_NAME[data["region"]]
-    total = region.price * count
+    # narx barcha hududda bir xil — global sozlamadan olinadi
+    price = (await svc.get_pricing())["water_price"]
+    total = price * count
     await state.update_data(count=count)
     summary = t("order_summary", lang).format(
         fullname=user.full_name,
@@ -277,7 +355,7 @@ async def order_count(message: Message, state: FSMContext):
         address=data.get("geo_address") or "—",
         region=region.name,
         count=count,
-        price=money(region.price),
+        price=money(price),
         total=money(total),
     )
     await message.answer(summary, reply_markup=kb.confirm_cancel_kb(lang))
@@ -290,6 +368,15 @@ async def order_confirm(message: Message, state: FSMContext):
     lang = user.lang if user else DEFAULT_LANG
     if _matches(message.text, "btn_confirm"):
         data = await state.get_data()
+        # yakuniy tekshiruv: qoldiq oraliqda kamayган bo'lishi mumkin
+        available = await wh.available_stock()
+        if data["count"] > available:
+            await state.clear()
+            await message.answer(
+                t("out_of_stock", lang).format(available=available),
+                reply_markup=kb.main_menu_kb(lang),
+            )
+            return
         order = await svc.create_order(
             user,
             data["region"],
@@ -337,8 +424,23 @@ async def menu_router(message: Message, state: FSMContext):
     text = message.text
 
     if _matches(text, "menu_new_order"):
-        await message.answer(t("order_send_location", lang), reply_markup=kb.order_location_kb(lang))
-        await state.set_state(NewOrder.location)
+        # Lokatsiya so'ralmaydi — ro'yxatdagi manzilga yetkaziladi.
+        await state.update_data(
+            latitude=user.latitude,
+            longitude=user.longitude,
+            geo_address=user.geo_address,
+        )
+        if user.region in REGION_BY_NAME:
+            await state.update_data(region=user.region)
+            await message.answer(
+                t("order_deliver_to_saved", lang).format(address=user.geo_address or "—")
+            )
+            await message.answer(t("order_choose_count", lang), reply_markup=kb.count_kb(lang))
+            await state.set_state(NewOrder.count)
+        else:
+            # ro'yxatdagi hudud noaniq — qo'lda tanlanadi
+            await message.answer(t("order_region_undetected", lang), reply_markup=kb.region_kb(lang))
+            await state.set_state(NewOrder.region)
 
     elif _matches(text, "menu_id"):
         await message.answer(t("your_id", lang).format(phone=user.phone))
@@ -357,9 +459,13 @@ async def menu_router(message: Message, state: FSMContext):
             t("bonus_info", lang).format(total=total, step=CLIENT_BONUS_STEP, remain=remain)
         )
 
+    elif _matches(text, "menu_feedback"):
+        await message.answer(t("feedback_ask", lang), reply_markup=kb.cancel_kb(lang))
+        await state.set_state(Feedback.text)
+
     elif _matches(text, "menu_settings"):
-        await message.answer(t("choose_lang", lang), reply_markup=kb.lang_kb())
-        await state.set_state(Settings.lang)
+        await message.answer(t("settings_title", lang), reply_markup=kb.settings_menu_kb(lang))
+        await state.set_state(Settings.menu)
 
     else:
         # Menyu tugmasi emas — adminga (operatorga) chat xabari sifatida yuboramiz

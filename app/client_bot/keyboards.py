@@ -36,11 +36,21 @@ def yes_no_kb(lang: str) -> ReplyKeyboardMarkup:
     return kb.as_markup(resize_keyboard=True)
 
 
-def location_kb(lang: str) -> ReplyKeyboardMarkup:
-    return ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text=t("btn_share_location", lang), request_location=True)]],
-        resize_keyboard=True,
-    )
+def location_kb(lang: str, cancel: bool = False) -> ReplyKeyboardMarkup:
+    rows = [[KeyboardButton(text=t("btn_share_location", lang), request_location=True)]]
+    if cancel:
+        rows.append([KeyboardButton(text=t("btn_cancel", lang))])
+    return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
+
+
+def settings_menu_kb(lang: str) -> ReplyKeyboardMarkup:
+    """Sozlamalar submenyusi: til / lokatsiya."""
+    kb = ReplyKeyboardBuilder()
+    kb.button(text=t("btn_set_lang", lang))
+    kb.button(text=t("btn_set_location", lang))
+    kb.button(text=t("btn_cancel", lang))
+    kb.adjust(2, 1)
+    return kb.as_markup(resize_keyboard=True)
 
 
 def region_kb(lang: str) -> ReplyKeyboardMarkup:
@@ -67,20 +77,15 @@ def confirm_cancel_kb(lang: str) -> ReplyKeyboardMarkup:
     return kb.as_markup(resize_keyboard=True)
 
 
-def order_location_kb(lang: str) -> ReplyKeyboardMarkup:
-    """Buyurtma manzili: joriy lokatsiya tugmasi + bekor qilish.
-    (Istalgan joyni 📎 → Lokatsiya orqali ham yuborsa bo'ladi.)"""
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text=t("btn_share_location", lang), request_location=True)],
-            [KeyboardButton(text=t("btn_cancel", lang))],
-        ],
-        resize_keyboard=True,
-    )
-
-
 def count_kb(lang: str) -> ReplyKeyboardMarkup:
     """Son qo'lda kiritiladi — faqat bekor qilish tugmasi qoladi."""
+    kb = ReplyKeyboardBuilder()
+    kb.button(text=t("btn_cancel", lang))
+    return kb.as_markup(resize_keyboard=True)
+
+
+def cancel_kb(lang: str) -> ReplyKeyboardMarkup:
+    """Faqat bekor qilish tugmasi (feedback va h.k. uchun)."""
     kb = ReplyKeyboardBuilder()
     kb.button(text=t("btn_cancel", lang))
     return kb.as_markup(resize_keyboard=True)
@@ -93,6 +98,7 @@ def main_menu_kb(lang: str) -> ReplyKeyboardMarkup:
     kb.button(text=t("menu_id", lang))
     kb.button(text=t("menu_empty", lang))
     kb.button(text=t("menu_bonus", lang))
+    kb.button(text=t("menu_feedback", lang))
     kb.button(text=t("menu_settings", lang))
-    kb.adjust(1, 2, 2, 1)
+    kb.adjust(1, 2, 2, 1, 1)
     return kb.as_markup(resize_keyboard=True)

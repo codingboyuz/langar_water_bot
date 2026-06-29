@@ -35,9 +35,13 @@
 
 <!-- Mijozlar reytingi -->
 <div class="card stagger overflow-hidden">
-  <div class="px-4 py-3.5 border-b border-[var(--line)] flex items-center gap-2">
+  <div class="px-4 py-3.5 border-b border-[var(--line)] flex items-center gap-2 flex-wrap">
     <svg class="ico text-brand-600" style="width:17px;height:17px"><use href="#i-trend"/></svg>
     <span class="font-semibold text-[14px] text-ink-900">Faol mijozlar reytingi</span>
+    <span class="ml-auto inline-flex items-center gap-1.5 text-[12px] text-ink-500 bg-amber-50 border border-amber-200 rounded-full pl-2.5 pr-3 py-1">
+      <svg class="ico text-amber-600" style="width:13px;height:13px"><use href="#i-package"/></svg>
+      Baklashka shtrafi: <b class="text-ink-800 tabular-nums">{{ bottle_price|money }}</b> so'm/dona
+    </span>
   </div>
   <div class="overflow-x-auto">
   <table class="w-full text-[13px]">
@@ -50,6 +54,8 @@
         <th class="px-4 py-3 font-semibold">Buyurtmalar</th>
         <th class="px-4 py-3 font-semibold">Jami suv</th>
         <th class="px-4 py-3 font-semibold">Bonus</th>
+        <th class="px-4 py-3 font-semibold">Shtraf (qarz)</th>
+        <th class="px-4 py-3 font-semibold text-right">Amal</th>
       </tr>
     </thead>
     <tbody class="divide-y divide-slate-100">
@@ -67,12 +73,96 @@
               <svg class="ico" style="width:12px;height:12px"><use href="#i-gift"/></svg> bonusli</span>
           {% else %}<span class="text-ink-300">—</span>{% endif %}
         </td>
+        <td class="px-4 py-3">
+          <div class="flex items-center gap-2">
+            {% if c.penalty_total %}
+              <span class="font-semibold text-rose-600 tabular-nums whitespace-nowrap">{{ c.penalty_total|money }} so'm</span>
+            {% else %}
+              <span class="text-ink-300">—</span>
+            {% endif %}
+            <form method="post" action="/clients/penalty" class="flex items-center gap-1"
+                  onsubmit="return confirm('«{{ c.name }}» mijozga {{ bottle_price|money }} so\'m/dona shtraf yozilsinmi?');">
+              <input type="hidden" name="user_id" value="{{ c.user_id }}">
+              <input name="count" type="number" min="1" placeholder="soni" required
+                     class="w-16 border border-slate-200 rounded-lg px-2 py-1 text-[12px] tabular-nums outline-none focus:border-amber-500">
+              <button title="Qaytarilmagan baklashka uchun shtraf yozish"
+                      class="btn inline-flex items-center justify-center w-7 h-7 rounded-lg border border-amber-200 text-amber-600 hover:bg-amber-50">
+                <svg class="ico" style="width:13px;height:13px"><use href="#i-plus"/></svg>
+              </button>
+            </form>
+          </div>
+        </td>
+        <td class="px-4 py-3 text-right">
+          <form method="post" action="/clients/delete" class="inline"
+                onsubmit="return confirm('«{{ c.name }}» mijozni arxivlaysizmi? Ma\'lumotlari saqlanadi — {{ archive_days }} kun ichida qaytsa tiklanadi.');">
+            <input type="hidden" name="user_id" value="{{ c.user_id }}">
+            <button title="Arxivlash" class="btn inline-flex items-center justify-center w-8 h-8 rounded-lg border border-[var(--line)] text-ink-500 hover:text-rose-600 hover:border-rose-200 hover:bg-rose-50">
+              <svg class="ico" style="width:14px;height:14px"><use href="#i-trash"/></svg>
+            </button>
+          </form>
+        </td>
       </tr>
       {% else %}
-      <tr><td colspan="7" class="px-4 py-14 text-center text-ink-400">Mijozlar yo'q</td></tr>
+      <tr><td colspan="9" class="px-4 py-14 text-center text-ink-400">Mijozlar yo'q</td></tr>
       {% endfor %}
     </tbody>
   </table>
   </div>
 </div>
+
+<!-- Arxivlangan mijozlar -->
+{% if archived %}
+<div class="card stagger overflow-hidden mt-4">
+  <div class="px-4 py-3.5 border-b border-[var(--line)] flex items-center gap-2">
+    <svg class="ico text-ink-400" style="width:17px;height:17px"><use href="#i-trash"/></svg>
+    <span class="font-semibold text-[14px] text-ink-900">Arxivlangan mijozlar</span>
+    <span class="ml-1 text-[12px] text-ink-400">{{ archived|length }} ta · {{ archive_days }} kundan keyin avtomatik o'chadi</span>
+  </div>
+  <div class="overflow-x-auto">
+  <table class="w-full text-[13px]">
+    <thead>
+      <tr class="bg-slate-50 text-ink-500 text-left border-b border-[var(--line)]">
+        <th class="px-4 py-3 font-semibold">F.I.Sh.</th>
+        <th class="px-4 py-3 font-semibold">ID (tel)</th>
+        <th class="px-4 py-3 font-semibold">Hudud</th>
+        <th class="px-4 py-3 font-semibold">Arxivlangan</th>
+        <th class="px-4 py-3 font-semibold">Avtomatik o'chish</th>
+        <th class="px-4 py-3 font-semibold text-right">Amallar</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-slate-100">
+      {% for a in archived %}
+      <tr class="row-tr hover:bg-slate-50/70">
+        <td class="px-4 py-3 font-medium text-ink-900">{{ a.name }}</td>
+        <td class="px-4 py-3 text-ink-700">{{ a.phone }}</td>
+        <td class="px-4 py-3 text-ink-700">{{ a.region }}</td>
+        <td class="px-4 py-3 text-ink-500">{{ a.deleted_at|date }}</td>
+        <td class="px-4 py-3">
+          <span class="inline-flex items-center gap-1.5 bg-amber-50 text-amber-700 px-2.5 py-1 rounded-full text-[11px] font-medium">
+            <svg class="ico" style="width:12px;height:12px"><use href="#i-clock"/></svg> {{ a.days_left }} kun qoldi</span>
+        </td>
+        <td class="px-4 py-3">
+          <div class="flex items-center justify-end gap-2">
+            <form method="post" action="/clients/restore" class="inline">
+              <input type="hidden" name="user_id" value="{{ a.user_id }}">
+              <button title="Tiklash" class="btn inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[12px] font-medium">
+                <svg class="ico" style="width:13px;height:13px"><use href="#i-rotate"/></svg> Tiklash
+              </button>
+            </form>
+            <form method="post" action="/clients/hard-delete" class="inline"
+                  onsubmit="return confirm('«{{ a.name }}» mijozni BUTUNLAY o\'chirasizmi? Bu amalni qaytarib bo\'lmaydi — barcha ma\'lumot va buyurtmalari o\'chadi.');">
+              <input type="hidden" name="user_id" value="{{ a.user_id }}">
+              <button title="Butunlay o'chirish" class="btn inline-flex items-center justify-center w-8 h-8 rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50">
+                <svg class="ico" style="width:14px;height:14px"><use href="#i-trash"/></svg>
+              </button>
+            </form>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endif %}
 {% endblock %}

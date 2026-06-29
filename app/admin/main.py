@@ -10,13 +10,18 @@ import json
 import os
 
 from fastapi import FastAPI, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import (
+    HTMLResponse,
+    JSONResponse,
+    RedirectResponse,
+    StreamingResponse,
+)
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
 from app import events
-from app.config import settings
+from app.config import CLIENT_ARCHIVE_DAYS, settings
 from app.db import service as svc
 from app.db import warehouse as wh
 from app.db.base import init_db
@@ -25,7 +30,109 @@ from app.utils import fmt_dt, fmt_date, money, now
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
+# === Bo'limlar (permission birliklari) ===
+# Kalit = sidebar `page` kaliti; operatorlarga shu bo'limlar bo'yicha ruxsat beriladi.
+ADMIN_SECTIONS: list[tuple[str, str]] = [
+    ("dashboard", "Boshqaruv paneli"),
+    ("orders", "Buyurtmalar"),
+    ("warehouse", "Ombor"),
+    ("courier_stats", "Kuryer hisobi"),
+    ("chat", "Chat"),
+    ("clients", "Mijozlar"),
+    ("feedback", "Talab va takliflar"),
+    ("pricing", "Narxlar"),
+]
+SECTION_KEYS: set[str] = {k for k, _ in ADMIN_SECTIONS}
+SECTION_URL: dict[str, str] = {
+    "dashboard": "/dashboard",
+    "orders": "/orders",
+    "warehouse": "/warehouse",
+    "courier_stats": "/couriers/stats",
+    "chat": "/chat",
+    "clients": "/clients",
+    "feedback": "/feedback",
+    "pricing": "/pricing",
+}
+# URL prefiksidan bo'limni aniqlash (ruxsat middleware'i uchun).
+_SECTION_PREFIXES: list[tuple[str, str]] = [
+    ("/dashboard", "dashboard"),
+    ("/api/stats", "dashboard"),
+    ("/orders", "orders"),
+    ("/assign", "orders"),
+    ("/warehouse", "warehouse"),
+    ("/api/warehouse", "warehouse"),
+    ("/couriers", "courier_stats"),
+    ("/chat", "chat"),
+    ("/api/chat", "chat"),
+    ("/clients", "clients"),
+    ("/bonus", "clients"),
+    ("/feedback", "feedback"),
+    ("/pricing", "pricing"),
+    ("/operators", "operators"),  # faqat super admin
+]
+# Ruxsatdan ozod (login holatidan qat'i nazar / bo'limga bog'liq emas) yo'llar.
+_EXEMPT_EXACT = {"/api/chat/unread"}
+
+
+def _section_for_path(path: str) -> str | None:
+    if path in _EXEMPT_EXACT:
+        return None
+    for prefix, sec in _SECTION_PREFIXES:
+        if path == prefix or path.startswith(prefix + "/"):
+            return sec
+    return None
+
+
+def _session_can(session: dict, section: str) -> bool:
+    if session.get("is_super"):
+        return True
+    if section == "operators":
+        return False  # faqat super admin
+    return section in (session.get("perms") or [])
+
+
+def _home_for_session(session: dict) -> str:
+    if session.get("is_super"):
+        return "/dashboard"
+    for key, _ in ADMIN_SECTIONS:
+        if key in (session.get("perms") or []):
+            return SECTION_URL[key]
+    return "/no-access"
+
+
+class PermissionMiddleware:
+    """Bo'lim ruxsatini tekshiradi (sof ASGI — SSE/oqim javoblarni buzmaydi).
+
+    SessionMiddleware'dan ICHKARIDA ishlaydi (shu sabab u avval qo'shiladi),
+    shunda `scope['session']` mavjud bo'ladi. Login bo'lmaganlarni route'lar
+    o'zi /login ga yo'naltiradi — bu yer faqat ruxsatni qaraydi.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        section = _section_for_path(scope.get("path", ""))
+        if section is not None:
+            session = scope.get("session") or {}
+            if session.get("admin") and not _session_can(session, section):
+                path = scope.get("path", "")
+                if path.startswith("/api"):
+                    resp = JSONResponse({"error": "forbidden"}, status_code=403)
+                else:
+                    resp = RedirectResponse(_home_for_session(session), status_code=302)
+                await resp(scope, receive, send)
+                return
+        await self.app(scope, receive, send)
+
+
 app = FastAPI(title="Langar Water — Admin")
+# Tartib muhim: PermissionMiddleware avval qo'shiladi (ichki), SessionMiddleware
+# keyin (tashqi) — shunda sessiya avval yuklanadi, keyin ruxsat tekshiriladi.
+app.add_middleware(PermissionMiddleware)
 app.add_middleware(SessionMiddleware, secret_key=settings.admin_secret_key)
 
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
@@ -33,6 +140,8 @@ templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 templates.env.filters["money"] = money
 templates.env.filters["dt"] = fmt_dt
 templates.env.filters["date"] = fmt_date
+# Sidebar va operatorlar sahifasi uchun bo'limlar ro'yxati
+templates.env.globals["ADMIN_SECTIONS"] = ADMIN_SECTIONS
 
 static_dir = os.path.join(BASE_DIR, "static")
 os.makedirs(static_dir, exist_ok=True)
@@ -56,13 +165,15 @@ def _redirect_login() -> RedirectResponse:
 
 @app.get("/", response_class=HTMLResponse)
 async def root(request: Request):
-    return RedirectResponse("/dashboard" if _authed(request) else "/login", status_code=302)
+    if not _authed(request):
+        return RedirectResponse("/login", status_code=302)
+    return RedirectResponse(_home_for_session(request.session), status_code=302)
 
 
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
     if _authed(request):
-        return RedirectResponse("/dashboard", status_code=302)
+        return RedirectResponse(_home_for_session(request.session), status_code=302)
     return templates.TemplateResponse(request, "login.html", {"error": None})
 
 
@@ -75,13 +186,22 @@ async def login(request: Request, login: str = Form(...), password: str = Form(.
         )
     request.session["admin"] = admin.id
     request.session["login"] = admin.login
-    return RedirectResponse("/dashboard", status_code=302)
+    request.session["is_super"] = bool(admin.is_super)
+    request.session["perms"] = [p for p in (admin.permissions or "").split(",") if p]
+    return RedirectResponse(_home_for_session(request.session), status_code=302)
 
 
 @app.get("/logout")
 async def logout(request: Request):
     request.session.clear()
     return RedirectResponse("/login", status_code=302)
+
+
+@app.get("/no-access", response_class=HTMLResponse)
+async def no_access(request: Request):
+    if not _authed(request):
+        return _redirect_login()
+    return templates.TemplateResponse(request, "no_access.html", {})
 
 
 # --------------------------- dashboard ---------------------------
@@ -254,15 +374,25 @@ async def courier_detail_page(request: Request, courier_id: int):
     detail = await svc.courier_detail(courier_id)
     if not detail:
         return RedirectResponse("/couriers/stats", status_code=302)
-    tg = None
-    if detail["courier"].telegram_id:
-        from app.admin.notify import get_telegram_chat
-        tg = await get_telegram_chat(detail["courier"].telegram_id)
+    # Telegram profili sahifa renderini BLOKLAMAYDI — JS bilan keyin yuklanadi
+    # (qarang: /couriers/{id}/tg). Shu sabab sahifa darhol ochiladi.
     return templates.TemplateResponse(
         request,
         "courier_detail.html",
-        {"page": "courier_stats", "d": detail, "tg": tg},
+        {"page": "courier_stats", "d": detail},
     )
+
+
+@app.get("/couriers/{courier_id:int}/tg")
+async def courier_tg(request: Request, courier_id: int):
+    """Kuryerning Telegram profilini alohida (AJAX) qaytaradi — sahifa qotmasin."""
+    if not _authed(request):
+        return {"error": "unauth"}
+    courier = await svc.get_courier(courier_id)
+    if not courier or not courier.telegram_id:
+        return {"tg": None}
+    from app.admin.notify import get_telegram_chat
+    return {"tg": await get_telegram_chat(courier.telegram_id)}
 
 
 # --------------------------- chat (admin <-> kuryer/mijoz) ---------------------------
@@ -390,17 +520,21 @@ async def chat_send(request: Request, kind: str, party_id: int, text: str = Form
     if not (party and text):
         return {"ok": False}
     m = await svc.add_chat_message(kind, party_id, "out", text)
-    delivered = False
-    if party["tg"]:
-        if kind == "courier":
-            delivered = await send_text_to_courier(party["tg"], text)
-        else:
-            delivered = await send_text_to_client(party["tg"], text)
+    # Telegram'ga yetkazishni FONDA bajaramiz — admin javobi kutib qotmaydi
+    # (Telegram sekin javob bersa ham xabar darhol ko'rinadi).
+    tg = party["tg"]
+    if tg:
+        async def _deliver():
+            if kind == "courier":
+                await send_text_to_courier(tg, text)
+            else:
+                await send_text_to_client(tg, text)
+        asyncio.create_task(_deliver())
     events.publish(
         "chat_message",
         {"kind": kind, "party_id": party_id, "name": party["name"]},
     )
-    return {"ok": True, "delivered": delivered, "message": _msg_json(m)}
+    return {"ok": True, "message": _msg_json(m)}
 
 
 @app.get("/api/chat/unread")
@@ -426,8 +560,7 @@ async def pricing_page(request: Request):
         "pricing.html",
         {
             "page": "pricing",
-            "pricing": await svc.list_pricing(),
-            "bottle_price": await svc.get_bottle_price(),
+            "pricing": await svc.get_pricing(),
             "saved": saved,
         },
     )
@@ -445,19 +578,11 @@ async def pricing_save(request: Request):
         except (TypeError, ValueError):
             return None
 
-    prices: dict[str, dict[str, int]] = {}
-    for key, val in form.items():
-        if key.startswith("water_"):
-            iv = _int(val)
-            if iv is not None:
-                prices.setdefault(key[6:], {})["water_price"] = iv
-        elif key.startswith("rate_"):
-            iv = _int(val)
-            if iv is not None:
-                prices.setdefault(key[5:], {})["courier_rate"] = iv
-
-    bottle = _int(form.get("bottle_price"))
-    await svc.update_pricing(prices, bottle_price=bottle)
+    await svc.update_pricing_global(
+        water_price=_int(form.get("water_price")),
+        courier_rate=_int(form.get("courier_rate")),
+        bottle_price=_int(form.get("bottle_price")),
+    )
     return RedirectResponse("/pricing?saved=1", status_code=302)
 
 
@@ -474,8 +599,142 @@ async def clients(request: Request):
             "page": "clients",
             "clients": await svc.top_clients(50),
             "bonuses": await svc.list_pending_bonuses(),
+            "archived": await svc.list_archived_clients(),
+            "archive_days": CLIENT_ARCHIVE_DAYS,
+            "bottle_price": await svc.get_bottle_price(),
         },
     )
+
+
+@app.post("/clients/penalty")
+async def clients_penalty(request: Request, user_id: int = Form(...), count: int = Form(...)):
+    """Mijozga baklashka shtrafini qo'lda yozadi (faqat son — narx o'zgarmas)."""
+    if not _authed(request):
+        return _redirect_login()
+    await svc.add_penalty(user_id, count)
+    return RedirectResponse("/clients", status_code=302)
+
+
+# --------------------------- talab va takliflar (feedback) ---------------------------
+
+@app.get("/feedback", response_class=HTMLResponse)
+async def feedback_page(request: Request):
+    if not _authed(request):
+        return _redirect_login()
+    items = await svc.list_feedback()
+    await svc.mark_all_feedback_read()  # ko'rilgach o'qilgan deb belgilanadi
+    return templates.TemplateResponse(
+        request, "feedback.html", {"page": "feedback", "items": items}
+    )
+
+
+@app.get("/api/feedback/unread")
+async def api_feedback_unread(request: Request):
+    if not _authed(request):
+        return {"error": "unauth"}
+    return {"unread": await svc.feedback_unread_count()}
+
+
+# --------------------------- operatorlar (super admin) ---------------------------
+# Bu bo'lim faqat super adminga ochiq — PermissionMiddleware operatorlarni
+# /operators dan avtomatik chetlaydi.
+
+@app.get("/operators", response_class=HTMLResponse)
+async def operators_page(request: Request):
+    if not _authed(request):
+        return _redirect_login()
+    admins = await svc.list_admins()
+    rows = [
+        {
+            "id": a.id,
+            "login": a.login,
+            "is_super": a.is_super,
+            "perms": {p for p in (a.permissions or "").split(",") if p},
+            "is_self": a.id == request.session.get("admin"),
+        }
+        for a in admins
+    ]
+    saved = request.query_params.get("saved")
+    err = request.query_params.get("err")
+    return templates.TemplateResponse(
+        request,
+        "operators.html",
+        {"page": "operators", "admins": rows, "saved": saved, "err": err},
+    )
+
+
+@app.post("/operators/create")
+async def operators_create(
+    request: Request,
+    login: str = Form(...),
+    password: str = Form(...),
+    sections: list[str] = Form(default=[]),
+):
+    if not _authed(request):
+        return _redirect_login()
+    admin = await svc.create_operator(login, password, sections, SECTION_KEYS)
+    if not admin:
+        return RedirectResponse("/operators?err=create", status_code=302)
+    return RedirectResponse("/operators?saved=create", status_code=302)
+
+
+@app.post("/operators/permissions")
+async def operators_permissions(
+    request: Request,
+    admin_id: int = Form(...),
+    sections: list[str] = Form(default=[]),
+):
+    if not _authed(request):
+        return _redirect_login()
+    await svc.update_operator_permissions(admin_id, sections, SECTION_KEYS)
+    return RedirectResponse("/operators?saved=perms", status_code=302)
+
+
+@app.post("/operators/password")
+async def operators_password(
+    request: Request, admin_id: int = Form(...), password: str = Form(...)
+):
+    if not _authed(request):
+        return _redirect_login()
+    ok = await svc.reset_admin_password(admin_id, password)
+    return RedirectResponse(
+        "/operators?saved=password" if ok else "/operators?err=password", status_code=302
+    )
+
+
+@app.post("/operators/delete")
+async def operators_delete(request: Request, admin_id: int = Form(...)):
+    if not _authed(request):
+        return _redirect_login()
+    await svc.delete_operator(admin_id)
+    return RedirectResponse("/operators?saved=delete", status_code=302)
+
+
+@app.post("/clients/delete")
+async def clients_delete(request: Request, user_id: int = Form(...)):
+    """Mijozni arxivlaydi (yumshoq o'chirish — ma'lumotlari saqlanadi)."""
+    if not _authed(request):
+        return _redirect_login()
+    await svc.soft_delete_user(user_id)
+    return RedirectResponse("/clients", status_code=302)
+
+
+@app.post("/clients/restore")
+async def clients_restore(request: Request, user_id: int = Form(...)):
+    """Arxivlangan mijozni qayta faollashtiradi."""
+    if not _authed(request):
+        return _redirect_login()
+    await svc.restore_user(user_id)
+    return RedirectResponse("/clients", status_code=302)
+
+
+@app.post("/clients/hard-delete")
+async def clients_hard_delete(request: Request, user_id: int = Form(...)):
+    """Mijozni butunlay o'chiradi (qaytarib bo'lmaydi)."""
+    if not _authed(request):
+        return _redirect_login()
+    await svc.hard_delete_user(user_id)
+    return RedirectResponse("/clients", status_code=302)
 
 
 @app.post("/bonus/sent")

@@ -48,25 +48,7 @@
             <dt class="text-ink-500">ID</dt>
             <dd class="text-emerald-600 font-medium tabular-nums">{{ c.telegram_id }}</dd>
           </div>
-          {% if tg %}
-            {% if tg.username %}
-            <div class="flex justify-between gap-3">
-              <dt class="text-ink-500">Username</dt>
-              <dd><a href="https://t.me/{{ tg.username }}" target="_blank" class="text-brand-600 hover:underline">@{{ tg.username }}</a></dd>
-            </div>
-            {% endif %}
-            {% if tg.first_name or tg.last_name %}
-            <div class="flex justify-between gap-3">
-              <dt class="text-ink-500">Telegram ismi</dt>
-              <dd class="text-ink-900">{{ tg.first_name or '' }} {{ tg.last_name or '' }}</dd>
-            </div>
-            {% endif %}
-            {% if tg.bio %}
-            <div><dt class="text-ink-500 mb-0.5">Bio</dt><dd class="text-ink-700">{{ tg.bio }}</dd></div>
-            {% endif %}
-          {% else %}
-            <div class="text-[12px] text-ink-400">Profil ma'lumotlari yuklanmadi (offline yoki bot to'xtagan).</div>
-          {% endif %}
+          <div id="tgInfo" class="text-[12px] text-ink-400">Yuklanmoqda…</div>
         </dl>
       {% else %}
         <div class="text-[12px] text-ink-400 flex items-center gap-1.5">
@@ -178,4 +160,32 @@
 
   </div>
 </div>
+
+{% if c.telegram_id %}
+<script>
+// Telegram profilini sahifa ochilgandan keyin yuklaymiz — sahifa qotmasin.
+(function(){
+  const box = document.getElementById('tgInfo');
+  if(!box) return;
+  function esc(s){ const d=document.createElement('div'); d.textContent=s==null?'':s; return d.innerHTML; }
+  fetch('/couriers/{{ c.id }}/tg').then(r=>r.json()).then(j=>{
+    const tg = j && j.tg;
+    if(!tg){ box.textContent = "Profil ma'lumotlari yuklanmadi (offline yoki bot to'xtagan)."; return; }
+    let h = '';
+    if(tg.username){
+      h += '<div class="flex justify-between gap-3"><dt class="text-ink-500">Username</dt>'+
+           '<dd><a href="https://t.me/'+esc(tg.username)+'" target="_blank" class="text-brand-600 hover:underline">@'+esc(tg.username)+'</a></dd></div>';
+    }
+    if(tg.first_name || tg.last_name){
+      h += '<div class="flex justify-between gap-3"><dt class="text-ink-500">Telegram ismi</dt>'+
+           '<dd class="text-ink-900">'+esc((tg.first_name||'')+' '+(tg.last_name||''))+'</dd></div>';
+    }
+    if(tg.bio){
+      h += '<div><dt class="text-ink-500 mb-0.5">Bio</dt><dd class="text-ink-700">'+esc(tg.bio)+'</dd></div>';
+    }
+    box.outerHTML = h || '<div class="text-[12px] text-ink-400">Qo\'shimcha profil ma\'lumoti yo\'q.</div>';
+  }).catch(()=>{ box.textContent = "Profil ma'lumotlari yuklanmadi."; });
+})();
+</script>
+{% endif %}
 {% endblock %}
