@@ -172,6 +172,9 @@
     <symbol id="i-back" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></symbol>
     <symbol id="i-shield" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></symbol>
     <symbol id="i-bulb" viewBox="0 0 24 24"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></symbol>
+    <symbol id="i-edit" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol>
   </svg>
 
   <!-- Mobil sidebar fon -->
@@ -192,7 +195,7 @@
     <nav class="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
       {% set is_super = request.session.get('is_super') %}
       {% set perms = request.session.get('perms') or [] %}
-      {% set items = [
+      {% set nav_items = [
         ('dashboard','/dashboard','Boshqaruv paneli','i-grid'),
         ('orders','/orders','Buyurtmalar','i-package'),
         ('warehouse','/warehouse','Ombor','i-box'),
@@ -202,7 +205,7 @@
         ('feedback','/feedback','Talab va takliflar','i-bulb'),
         ('pricing','/pricing','Narxlar','i-cash')
       ] %}
-      {% for key,url,label,icon in items %}
+      {% for key,url,label,icon in nav_items %}
         {% if is_super or key in perms %}
         <a href="{{ url }}" style="animation:slideIn .35s ease both;animation-delay:{{ loop.index0 * 45 }}ms"
            class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13.5px] font-medium
@@ -354,7 +357,7 @@
       const wrap = document.getElementById('toastWrap');
       if(!wrap) return;
       const el = document.createElement('div');
-      const accent = kind==='new' ? 'border-emerald-500' : 'border-brand-500';
+      const accent = kind==='new' ? 'border-emerald-500' : (kind==='warn' ? 'border-amber-500' : 'border-brand-500');
       el.className = 'card '+accent+' border-l-4 px-4 py-3 text-[13px] text-ink-800 shadow-lg';
       el.style.animation = 'slideDown .3s ease both';
       el.textContent = msg;
@@ -395,10 +398,15 @@
     document.addEventListener('DOMContentLoaded', refreshFeedbackBadge);
 
     // ---- Realtime SSE ulanishi ----
+    // MUHIM: har ochiq admin oynasi (tab) /events uchun DOIMIY ulanish tutadi.
+    // Brauzer bitta domenga HTTP/1.1 da ~6 ulanishga ruxsat beradi — bir necha
+    // oyna ochiq bo'lsa, slotlar tugab boshqa sahifalar (masalan /clients) umuman
+    // ochilmay qolardi. Shu sabab oyna YASHIRIN (background tab) bo'lganda SSE ni
+    // yopamiz va faol bo'lganda qayta ulaymiz — slotlar bo'sh qoladi.
     (function(){
       if(!window.EventSource) return;
-      const es = new EventSource('/events');
-      es.onmessage = (e)=>{
+      let es = null;
+      function onMessage(e){
         let d; try{ d = JSON.parse(e.data); }catch(_){ return; }
         if(!d || !d.event) return;
         if(d.event==='order_new'){
@@ -412,8 +420,27 @@
           showToast('💡 Yangi taklif' + (d.name ? ': '+d.name : '') + (d.preview ? ' — '+d.preview : ''), 'new');
           refreshFeedbackBadge();
         }
+        if(d.event==='chat_undelivered'){
+          showToast('⚠️ Xabar Telegramга yetkazilmadi' + (d.name ? ': '+d.name : '') +
+                    ' — foydalanuvchi botni ishga tushirmagan yoki bloklagan bo\'lishi mumkin', 'warn');
+        }
         window.dispatchEvent(new CustomEvent('sse', { detail:d }));
-      };
+      }
+      function connect(){
+        if(es) return;
+        es = new EventSource('/events');
+        es.onmessage = onMessage;
+      }
+      function disconnect(){
+        if(es){ es.close(); es = null; }
+      }
+      // Faol oynada ulanamiz; yashiringanda uzamiz (slotni bo'shatamiz).
+      document.addEventListener('visibilitychange', ()=>{
+        if(document.hidden) disconnect(); else connect();
+      });
+      // Sahifadan chiqishda ulanishni albatta yopamiz.
+      window.addEventListener('pagehide', disconnect);
+      if(!document.hidden) connect();
     })();
   </script>
   {% block scripts %}{% endblock %}

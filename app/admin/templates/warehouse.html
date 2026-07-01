@@ -9,6 +9,27 @@
   Yangi partiya omborga kirim qilindi.
 </div>
 {% endif %}
+{% if edited %}
+<div class="card border-emerald-200 bg-emerald-50 px-4 py-3 mb-4 text-[13px] text-emerald-800 flex items-center gap-2 stagger">
+  <svg class="ico text-emerald-600" style="width:16px;height:16px"><use href="#i-check"/></svg>
+  Partiya tuzatildi.
+</div>
+{% endif %}
+{% if deleted %}
+<div class="card border-emerald-200 bg-emerald-50 px-4 py-3 mb-4 text-[13px] text-emerald-800 flex items-center gap-2 stagger">
+  <svg class="ico text-emerald-600" style="width:16px;height:16px"><use href="#i-check"/></svg>
+  Partiya o'chirildi.
+</div>
+{% endif %}
+{% if err %}
+<div class="card border-rose-200 bg-rose-50 px-4 py-3 mb-4 text-[13px] text-rose-700 flex items-center gap-2 stagger">
+  <svg class="ico text-rose-600" style="width:16px;height:16px"><use href="#i-warn"/></svg>
+  {% if err == 'sold' %}Bu partiyadan sotuv bo'lgan — tuzatib yoki o'chirib bo'lmaydi (FIFO tannarx tarixi buzilmasligi uchun).
+  {% elif err == 'not_found' %}Partiya topilmadi.
+  {% elif err == 'quantity' %}Miqdor noto'g'ri.
+  {% else %}Amalni bajarib bo'lmadi.{% endif %}
+</div>
+{% endif %}
 
 <!-- Qisqa ko'rsatkichlar -->
 <div class="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-5">
@@ -58,13 +79,22 @@
     </div>
   </div>
   <form method="post" action="/warehouse/inbound" class="grid sm:grid-cols-2 lg:grid-cols-6 gap-3 items-end">
+    <!-- Mahsulot va hajm qo'lda kiritiladi; avvalgilari ro'yxatda (datalist) chiqadi -->
+    <datalist id="dl-product-names">
+      {% for n in product_names %}<option value="{{ n }}">{% endfor %}
+    </datalist>
+    <datalist id="dl-product-volumes">
+      {% for v in product_volumes %}<option value="{{ v }}">{% endfor %}
+    </datalist>
     <div class="lg:col-span-2">
-      <label class="block text-[12px] text-ink-500 font-medium mb-1">Mahsulot</label>
-      <select name="product_id" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-[14px] outline-none focus:border-brand-500">
-        {% for p in products %}
-        <option value="{{ p.id }}">{{ p.name }}{% if p.volume %} ({{ p.volume }}){% endif %}</option>
-        {% endfor %}
-      </select>
+      <label class="block text-[12px] text-ink-500 font-medium mb-1">Mahsulot (qo'lda / ro'yxatdan)</label>
+      <input name="product_name" list="dl-product-names" required placeholder="masalan: Suv (baklashka)" autocomplete="off"
+             class="w-full border border-slate-200 rounded-lg px-3 py-2 text-[14px] outline-none focus:border-brand-500">
+    </div>
+    <div>
+      <label class="block text-[12px] text-ink-500 font-medium mb-1">Hajmi (litr)</label>
+      <input name="volume" list="dl-product-volumes" placeholder="masalan: 19L" autocomplete="off"
+             class="w-full border border-slate-200 rounded-lg px-3 py-2 text-[14px] outline-none focus:border-brand-500">
     </div>
     <div>
       <label class="block text-[12px] text-ink-500 font-medium mb-1">Miqdor (dona)</label>
@@ -81,7 +111,7 @@
       <input name="received_at" type="date" value="{{ today }}"
              class="w-full border border-slate-200 rounded-lg px-3 py-2 text-[14px] outline-none focus:border-brand-500">
     </div>
-    <div>
+    <div class="lg:col-span-2">
       <label class="block text-[12px] text-ink-500 font-medium mb-1">Yetkazib beruvchi</label>
       <input name="supplier" placeholder="ixtiyoriy"
              class="w-full border border-slate-200 rounded-lg px-3 py-2 text-[14px] outline-none focus:border-brand-500">
@@ -142,6 +172,7 @@
           <th class="px-4 py-3 font-semibold text-right">Tannarx</th>
           <th class="px-4 py-3 font-semibold text-right">Qoldiq</th>
           <th class="px-4 py-3 font-semibold">Sana</th>
+          <th class="px-4 py-3 font-semibold text-right">Amal</th>
         </tr>
       </thead>
       <tbody class="divide-y divide-slate-100">
@@ -155,9 +186,69 @@
           <td class="px-4 py-3 text-right tabular-nums text-ink-700">{{ b.unit_cost|money }}</td>
           <td class="px-4 py-3 text-right tabular-nums font-semibold {{ 'text-ink-400' if b.remaining == 0 else 'text-emerald-700' }}">{{ b.remaining }}</td>
           <td class="px-4 py-3 text-ink-500 whitespace-nowrap">{{ b.received_at|date }}</td>
+          <td class="px-4 py-3">
+            <div class="flex items-center justify-end gap-1.5">
+              {% if b.sold > 0 %}
+              <span title="Bu partiyadan {{ b.sold }} ta sotilgan — tuzatib bo'lmaydi"
+                    class="inline-flex items-center gap-1 text-[11px] text-ink-400">
+                <svg class="ico" style="width:13px;height:13px"><use href="#i-lock"/></svg>{{ b.sold }} sotilgan
+              </span>
+              {% else %}
+              <button type="button" onclick="toggleEdit({{ b.id }})" title="Tuzatish"
+                      class="btn inline-flex items-center justify-center w-7 h-7 rounded-lg border border-[var(--line)] text-ink-500 hover:text-brand-600 hover:border-brand-300 hover:bg-brand-50">
+                <svg class="ico" style="width:13px;height:13px"><use href="#i-edit"/></svg>
+              </button>
+              <form method="post" action="/warehouse/inbound/delete" class="inline"
+                    onsubmit="return confirm('«{{ b.batch_no }}» partiyasini o\'chirasizmi? Bu kirim butunlay o\'chadi.');">
+                <input type="hidden" name="batch_id" value="{{ b.id }}">
+                <button title="O'chirish" class="btn inline-flex items-center justify-center w-7 h-7 rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50">
+                  <svg class="ico" style="width:13px;height:13px"><use href="#i-trash"/></svg>
+                </button>
+              </form>
+              {% endif %}
+            </div>
+          </td>
         </tr>
+        {% if b.sold == 0 %}
+        <tr id="edit-{{ b.id }}" class="hidden bg-brand-50/40">
+          <td colspan="6" class="px-4 py-3">
+            <form method="post" action="/warehouse/inbound/update" class="grid sm:grid-cols-5 gap-2 items-end">
+              <input type="hidden" name="batch_id" value="{{ b.id }}">
+              <div>
+                <label class="block text-[11px] text-ink-500 font-medium mb-1">Miqdor (dona)</label>
+                <input name="quantity" inputmode="numeric" required value="{{ b.quantity }}"
+                       class="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-[13px] tabular-nums outline-none focus:border-brand-500">
+              </div>
+              <div>
+                <label class="block text-[11px] text-ink-500 font-medium mb-1">Dona narxi</label>
+                <input name="unit_cost" inputmode="numeric" required value="{{ b.unit_cost }}"
+                       class="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-[13px] tabular-nums outline-none focus:border-brand-500">
+              </div>
+              <div>
+                <label class="block text-[11px] text-ink-500 font-medium mb-1">Sana</label>
+                <input name="received_at" type="date" value="{{ b.received_at.strftime('%Y-%m-%d') }}"
+                       class="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-[13px] outline-none focus:border-brand-500">
+              </div>
+              <div>
+                <label class="block text-[11px] text-ink-500 font-medium mb-1">Yetkazib beruvchi</label>
+                <input name="supplier" value="{{ b.supplier or '' }}" placeholder="ixtiyoriy"
+                       class="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-[13px] outline-none focus:border-brand-500">
+              </div>
+              <div class="flex items-center gap-1.5">
+                <button class="btn inline-flex items-center gap-1 bg-brand-600 hover:bg-brand-700 text-white px-3 py-1.5 rounded-lg text-[12px] font-medium">
+                  <svg class="ico" style="width:13px;height:13px"><use href="#i-check"/></svg> Saqlash
+                </button>
+                <button type="button" onclick="toggleEdit({{ b.id }})"
+                        class="btn inline-flex items-center justify-center w-8 h-8 rounded-lg border border-[var(--line)] text-ink-500 hover:bg-slate-50">
+                  <svg class="ico" style="width:14px;height:14px"><use href="#i-x"/></svg>
+                </button>
+              </div>
+            </form>
+          </td>
+        </tr>
+        {% endif %}
         {% else %}
-        <tr><td colspan="5" class="px-4 py-14 text-center text-ink-400">Hali kirim yo'q</td></tr>
+        <tr><td colspan="6" class="px-4 py-14 text-center text-ink-400">Hali kirim yo'q</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -211,4 +302,11 @@
     </div>
   </div>
 </div>
+
+<script>
+  function toggleEdit(id){
+    const row = document.getElementById('edit-'+id);
+    if(row) row.classList.toggle('hidden');
+  }
+</script>
 {% endblock %}

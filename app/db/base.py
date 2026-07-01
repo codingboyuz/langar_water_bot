@@ -204,6 +204,8 @@ async def _ensure_columns() -> None:
         ("users", "deleted_at", "DATETIME"),
         ("admins", "is_super", "BOOLEAN DEFAULT 0"),
         ("admins", "permissions", "VARCHAR(255) DEFAULT ''"),
+        ("feedback", "party_kind", "VARCHAR(16) DEFAULT 'client'"),
+        ("feedback", "courier_id", "INTEGER"),
     ]
     async with engine.begin() as conn:
         for table, column, ddl in migrations:

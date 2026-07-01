@@ -134,16 +134,25 @@ class Penalty(Base):
 
 
 class Feedback(Base):
-    """Mijozning talab/taklifi (fikr) — admin panelda ko'rinadi."""
+    """Talab/taklif (fikr) — admin panelda ko'rinadi.
+
+    `party_kind` — kim yozgani: 'client' (mijoz) yoki 'courier' (kuryer).
+    Mos ravishda `user_id` yoki `courier_id` to'ldiriladi (ikkinchisi NULL).
+    """
     __tablename__ = "feedback"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    party_kind: Mapped[str] = mapped_column(String(16), default="client", index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+    courier_id: Mapped[int | None] = mapped_column(
+        ForeignKey("couriers.id"), nullable=True, index=True
+    )
     text: Mapped[str] = mapped_column(Text)
     is_read: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now, index=True)
 
-    user: Mapped["User"] = relationship()
+    user: Mapped["User | None"] = relationship()
+    courier: Mapped["Courier | None"] = relationship()
 
 
 class Admin(Base):

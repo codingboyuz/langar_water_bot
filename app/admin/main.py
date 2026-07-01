@@ -263,15 +263,22 @@ async def events_stream(request: Request):
         try:
             # ulanish ochilganini bildiramiz
             yield "retry: 3000\n\n"
+            idle = 0
             while True:
                 if await request.is_disconnected():
                     break
                 try:
-                    payload = await asyncio.wait_for(queue.get(), timeout=20)
+                    # kalta timeout — brauzer ulanishni yopganini tez sezamiz,
+                    # shunda server tomondagi bo'sh ulanish darhol tozalanadi
+                    # (HTTP/1.1 ulanish slotlari uzoq band bo'lib turmaydi).
+                    payload = await asyncio.wait_for(queue.get(), timeout=2)
                     yield f"data: {payload}\n\n"
+                    idle = 0
                 except asyncio.TimeoutError:
-                    # ulanishni tirik saqlash uchun izoh-qator
-                    yield ": keep-alive\n\n"
+                    idle += 1
+                    if idle >= 10:  # ~20s da bir marta tirik-saqlash izohi
+                        idle = 0
+                        yield ": keep-alive\n\n"
         finally:
             events.unsubscribe(queue)
 
@@ -526,10 +533,22 @@ async def chat_send(request: Request, kind: str, party_id: int, text: str = Form
     if tg:
         async def _deliver():
             if kind == "courier":
-                await send_text_to_courier(tg, text)
+                ok = await send_text_to_courier(tg, text)
             else:
-                await send_text_to_client(tg, text)
+                ok = await send_text_to_client(tg, text)
+            if not ok:
+                # Telegramга yetmadi (bot ishga tushmagan/bloklangan) —
+                # admin bilsin: fon yuborish jimgina yo'qolib ketmasin.
+                events.publish(
+                    "chat_undelivered",
+                    {"kind": kind, "party_id": party_id, "name": party["name"]},
+                )
         asyncio.create_task(_deliver())
+    else:
+        events.publish(
+            "chat_undelivered",
+            {"kind": kind, "party_id": party_id, "name": party["name"]},
+        )
     events.publish(
         "chat_message",
         {"kind": kind, "party_id": party_id, "name": party["name"]},
@@ -751,7 +770,11 @@ async def bonus_sent(request: Request, bonus_id: int = Form(...)):
 async def warehouse_page(request: Request):
     if not _authed(request):
         return _redirect_login()
-    added = request.query_params.get("added") == "1"
+    qp = request.query_params
+    products = await wh.list_products()
+    # datalist uchun takrorlanmas nom va hajmlar (avvalgi kirimlar eslab qolinadi)
+    product_names = list(dict.fromkeys(p.name for p in products if p.name))
+    product_volumes = list(dict.fromkeys(p.volume for p in products if p.volume))
     return templates.TemplateResponse(
         request,
         "warehouse.html",
@@ -760,9 +783,14 @@ async def warehouse_page(request: Request):
             "stock": await wh.current_stock(),
             "batches": await wh.list_batches(),
             "movements": await wh.list_movements(100),
-            "products": await wh.list_products(),
+            "products": products,
+            "product_names": product_names,
+            "product_volumes": product_volumes,
             "today": now().strftime("%Y-%m-%d"),
-            "added": added,
+            "added": qp.get("added") == "1",
+            "edited": qp.get("edited") == "1",
+            "deleted": qp.get("deleted") == "1",
+            "err": qp.get("err"),
         },
     )
 
@@ -780,10 +808,18 @@ async def warehouse_inbound(request: Request):
         except (TypeError, ValueError):
             return 0
 
-    product_id = _int(form.get("product_id"))
     quantity = _int(form.get("quantity"))
     unit_cost = _int(form.get("unit_cost"))
     supplier = (str(form.get("supplier") or "").strip()) or None
+
+    # Mahsulot va suv litri qo'lda kiritiladi (BDga saqlanadi — keyingi safar
+    # datalist'da avtomatik chiqadi). Eski `product_id` (dropdown) ham qo'llanadi.
+    product_name = str(form.get("product_name") or "").strip()
+    volume = str(form.get("volume") or "").strip() or None
+    product_id = _int(form.get("product_id"))
+    if product_name:
+        prod = await wh.get_or_create_product(product_name, volume)
+        product_id = prod.id if prod else product_id
 
     received_at = None
     raw_date = str(form.get("received_at") or "").strip()
@@ -803,6 +839,56 @@ async def warehouse_inbound(request: Request):
             received_at=received_at,
         )
     return RedirectResponse("/warehouse?added=1", status_code=302)
+
+
+def _parse_date(raw: str | None):
+    raw = str(raw or "").strip()
+    if not raw:
+        return None
+    from datetime import datetime as _dt
+    try:
+        return _dt.strptime(raw, "%Y-%m-%d")
+    except ValueError:
+        return None
+
+
+@app.post("/warehouse/inbound/update")
+async def warehouse_inbound_update(request: Request):
+    """Kirim partiyasini tuzatish (xato son/narx). Faqat sotilmagan partiya."""
+    if not _authed(request):
+        return _redirect_login()
+    form = await request.form()
+
+    def _int(v) -> int:
+        try:
+            return int(str(v).replace(" ", "").strip())
+        except (TypeError, ValueError):
+            return 0
+
+    res = await wh.update_inbound(
+        batch_id=_int(form.get("batch_id")),
+        quantity=_int(form.get("quantity")),
+        unit_cost=_int(form.get("unit_cost")),
+        supplier=(str(form.get("supplier") or "").strip()) or None,
+        received_at=_parse_date(form.get("received_at")),
+    )
+    flag = "edited=1" if res.get("ok") else f"err={res.get('error')}"
+    return RedirectResponse(f"/warehouse?{flag}", status_code=302)
+
+
+@app.post("/warehouse/inbound/delete")
+async def warehouse_inbound_delete(request: Request):
+    """Kirim partiyasini o'chirish (xato kirim). Faqat sotilmagan partiya."""
+    if not _authed(request):
+        return _redirect_login()
+    form = await request.form()
+    try:
+        batch_id = int(str(form.get("batch_id")).strip())
+    except (TypeError, ValueError):
+        batch_id = 0
+    res = await wh.delete_inbound(batch_id)
+    flag = "deleted=1" if res.get("ok") else f"err={res.get('error')}"
+    return RedirectResponse(f"/warehouse?{flag}", status_code=302)
 
 
 @app.get("/warehouse/reports", response_class=HTMLResponse)

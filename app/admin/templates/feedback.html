@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Talab va takliflar{% endblock %}
-{% block subtitle %}Mijozlardan kelgan fikr-mulohazalar{% endblock %}
+{% block subtitle %}Mijoz va kuryerlardan kelgan fikr-mulohazalar{% endblock %}
 {% block content %}
 
 <div class="card stagger overflow-hidden">
@@ -13,12 +13,20 @@
   <div class="divide-y divide-slate-100">
     {% for f in items %}
     <div class="px-4 py-3.5 flex gap-3 {{ 'bg-amber-50/40' if not f.is_read }}">
-      <span class="w-9 h-9 flex-none rounded-full bg-amber-500/10 text-amber-600 flex items-center justify-center font-semibold text-[14px]">
+      <span class="w-9 h-9 flex-none rounded-full flex items-center justify-center font-semibold text-[14px]
+        {{ 'bg-brand-500/10 text-brand-600' if f.source == 'courier' else 'bg-amber-500/10 text-amber-600' }}">
         {{ (f.name or '?')[0]|upper }}
       </span>
       <div class="min-w-0 flex-1">
         <div class="flex items-center gap-2 flex-wrap">
           <span class="font-medium text-[13.5px] text-ink-900">{{ f.name }}</span>
+          {% if f.source == 'courier' %}
+          <span class="inline-flex items-center gap-1 text-[10.5px] text-brand-700 bg-brand-50 border border-brand-200 px-2 py-0.5 rounded-full font-semibold">
+            <svg class="ico" style="width:11px;height:11px"><use href="#i-truck"/></svg> Kuryer</span>
+          {% else %}
+          <span class="inline-flex items-center gap-1 text-[10.5px] text-ink-500 bg-slate-100 px-2 py-0.5 rounded-full font-semibold">
+            <svg class="ico" style="width:11px;height:11px"><use href="#i-users"/></svg> Mijoz</span>
+          {% endif %}
           <span class="text-[12px] text-ink-400">{{ f.phone }}</span>
           {% if not f.is_read %}
           <span class="inline-flex items-center text-[10.5px] text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full font-semibold">yangi</span>

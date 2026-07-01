@@ -126,6 +126,11 @@ TEXTS: dict[str, dict[str, str]] = {
         "ru": "✅ Спасибо! Ваш отзыв принят и отправлен админу.",
         "en": "✅ Thank you! Your feedback has been received and sent to the admin.",
     },
+    "feedback_history_title": {
+        "uz": "🗂 Oldingi takliflaringiz:",
+        "ru": "🗂 Ваши прошлые предложения:",
+        "en": "🗂 Your previous suggestions:",
+    },
     # --- Ombor (suv) tugaganda ---
     "out_of_stock": {
         "uz": "😔 Kechirasiz, hozircha omborda suv yetarli emas.\n\n📦 Mavjud: {available} ta. Tez orada to'ldiriladi — birozdan keyin urinib ko'ring yoki operatorga yozing.",
@@ -372,6 +377,11 @@ TEXTS: dict[str, dict[str, str]] = {
         "uz": "👤 Mening profilim",
         "ru": "👤 Мой профиль",
         "en": "👤 My profile",
+    },
+    "c_menu_feedback": {
+        "uz": "💡 Talab va takliflar",
+        "ru": "💡 Предложения и пожелания",
+        "en": "💡 Feedback & suggestions",
     },
     "c_status_active": {"uz": "🟢 Faol", "ru": "🟢 Активен", "en": "🟢 Active"},
     "c_status_inactive": {"uz": "🔴 Nofaol", "ru": "🔴 Неактивен", "en": "🔴 Inactive"},

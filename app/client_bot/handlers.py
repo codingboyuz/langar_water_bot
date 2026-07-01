@@ -289,7 +289,7 @@ async def feedback_text(message: Message, state: FSMContext):
     if not text:
         await message.answer(t("feedback_ask", lang), reply_markup=kb.cancel_kb(lang))
         return
-    await svc.add_feedback(user.id, text)
+    await svc.add_feedback("client", user.id, text)
     events.publish(
         "feedback",
         {"user_id": user.id, "name": user.full_name, "preview": text[:80]},
@@ -460,6 +460,11 @@ async def menu_router(message: Message, state: FSMContext):
         )
 
     elif _matches(text, "menu_feedback"):
+        history = _feedback_history_text(
+            await svc.list_party_feedback("client", user.id), lang
+        )
+        if history:
+            await message.answer(history)
         await message.answer(t("feedback_ask", lang), reply_markup=kb.cancel_kb(lang))
         await state.set_state(Feedback.text)
 
@@ -475,6 +480,16 @@ async def menu_router(message: Message, state: FSMContext):
             {"kind": "client", "party_id": user.id, "name": user.full_name, "preview": text[:80]},
         )
         await message.answer(t("client_chat_sent", lang), reply_markup=kb.main_menu_kb(lang))
+
+
+def _feedback_history_text(items, lang: str) -> str | None:
+    """Foydalanuvchining oldingi takliflari ro'yxati (bo'sh bo'lsa None)."""
+    if not items:
+        return None
+    lines = [t("feedback_history_title", lang)]
+    for f in items:
+        lines.append(f"• {fmt_date(f.created_at)} — {f.text}")
+    return "\n".join(lines)
 
 
 async def _history_text(user, lang: str) -> str:

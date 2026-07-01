@@ -37,6 +37,34 @@ async def list_products() -> Sequence[Product]:
         return res.scalars().all()
 
 
+async def get_or_create_product(name: str, volume: str | None = None) -> Product | None:
+    """Mahsulotni nom+hajm bo'yicha topadi; bo'lmasa yangisini yaratadi (BDga eslab qoladi).
+
+    Kirim formasida mahsulot va suv litri qo'lda kiritiladi — bu yerda saqlanadi,
+    keyingi safar dropdown (datalist) da avtomatik taklif bo'lib chiqadi.
+    Yangi mahsulot `is_default=False` (sotuvdagi standart mahsulotга tegmaydi).
+    """
+    name = (name or "").strip()
+    volume = (volume or "").strip() or None
+    if not name:
+        return None
+    async with SessionLocal() as s:
+        # nomi bir xil (registrга sezgir emas) va hajmi mos mahsulotni izlaymiz
+        rows = (
+            await s.execute(
+                select(Product).where(func.lower(Product.name) == name.lower())
+            )
+        ).scalars().all()
+        for p in rows:
+            if (p.volume or None) == volume:
+                return p
+        prod = Product(name=name, volume=volume, is_default=False)
+        s.add(prod)
+        await s.commit()
+        await s.refresh(prod)
+        return prod
+
+
 # ============================ KIRIM (PARTIYA) ============================
 
 async def _next_batch_no(s, received_at: datetime) -> str:
@@ -98,6 +126,80 @@ async def create_inbound(
         await s.commit()
         await s.refresh(batch)
         return batch
+
+
+async def _batch_sold(s, batch: Batch) -> int:
+    """Partiyadan sotilgan (chiqim qilingan) dona — tahrir/o'chirish xavfsizligi uchun."""
+    return int(batch.quantity) - int(batch.remaining)
+
+
+async def update_inbound(
+    batch_id: int,
+    quantity: int,
+    unit_cost: int,
+    supplier: str | None = None,
+    received_at: datetime | None = None,
+) -> dict:
+    """Kirim partiyasini tuzatadi (xato son/narx kiritilganda).
+
+    Faqat partiyadan HALI hech narsa sotilmagan bo'lsa ruxsat beriladi
+    (aks holda FIFO tannarx tarixini buzadi). Qaytaradi: {ok, error}.
+    """
+    quantity = max(0, int(quantity or 0))
+    unit_cost = max(0, int(unit_cost or 0))
+    if quantity <= 0:
+        return {"ok": False, "error": "quantity"}
+    async with SessionLocal() as s:
+        batch = await s.get(Batch, batch_id)
+        if not batch:
+            return {"ok": False, "error": "not_found"}
+        if await _batch_sold(s, batch) > 0:
+            # partiyadan sotilgan bor — tuzatib bo'lmaydi
+            return {"ok": False, "error": "sold"}
+        batch.quantity = quantity
+        batch.unit_cost = unit_cost
+        batch.total_cost = quantity * unit_cost
+        batch.remaining = quantity  # sotilmagani uchun qoldiq = butun miqdor
+        batch.supplier = (supplier or None)
+        if received_at is not None:
+            batch.received_at = received_at
+        # bog'liq KIRIM harakatini ham yangilaymiz (tarix mos bo'lsin)
+        mv = (
+            await s.execute(
+                select(StockMovement).where(
+                    StockMovement.batch_id == batch_id, StockMovement.kind == "in"
+                )
+            )
+        ).scalars().first()
+        if mv:
+            mv.quantity = quantity
+            mv.unit_cost = unit_cost
+            if received_at is not None:
+                mv.created_at = received_at
+        await s.commit()
+        return {"ok": True, "error": None}
+
+
+async def delete_inbound(batch_id: int) -> dict:
+    """Kirim partiyasini o'chiradi (xato kirim qilinganda).
+
+    Faqat partiyadan hali sotuv bo'lmagan bo'lsa ruxsat. Qaytaradi: {ok, error}.
+    """
+    async with SessionLocal() as s:
+        batch = await s.get(Batch, batch_id)
+        if not batch:
+            return {"ok": False, "error": "not_found"}
+        if await _batch_sold(s, batch) > 0:
+            return {"ok": False, "error": "sold"}
+        # bog'liq KIRIM harakatini o'chiramiz, keyin partiyani
+        await s.execute(
+            StockMovement.__table__.delete().where(
+                StockMovement.batch_id == batch_id, StockMovement.kind == "in"
+            )
+        )
+        await s.delete(batch)
+        await s.commit()
+        return {"ok": True, "error": None}
 
 
 # ============================ CHIQIM (FIFO) ============================

@@ -44,6 +44,10 @@ class Deliver(StatesGroup):
     empty_left = State()
 
 
+class Feedback(StatesGroup):
+    text = State()        # talab va takliflar matni
+
+
 # --------------------------- klaviaturalar ---------------------------
 
 def _lang_kb() -> ReplyKeyboardMarkup:
@@ -77,15 +81,38 @@ def _region_kb() -> ReplyKeyboardMarkup:
 
 
 def _main_menu_kb(lang: str) -> ReplyKeyboardMarkup:
-    """Ro'yxatdan o'tgandan keyin doimiy ko'rinadigan menyu (hozircha — profil)."""
+    """Ro'yxatdan o'tgandan keyin doimiy ko'rinadigan menyu: profil + takliflar."""
     return ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text=t("c_menu_profile", lang))]],
+        keyboard=[[
+            KeyboardButton(text=t("c_menu_profile", lang)),
+            KeyboardButton(text=t("c_menu_feedback", lang)),
+        ]],
         resize_keyboard=True,
     )
 
 
-# Profil tugmasi har uch tilda — chat (catch-all) handleridan ajratish uchun
+def _feedback_cancel_kb(lang: str) -> ReplyKeyboardMarkup:
+    """Faqat bekor qilish tugmasi (taklif kiritishda)."""
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text=t("btn_cancel", lang))]],
+        resize_keyboard=True,
+    )
+
+
+# Menyu tugmalari har uch tilda — chat (catch-all) handleridan ajratish uchun
 _PROFILE_LABELS = {t("c_menu_profile", lang) for lang in LANGS}
+_FEEDBACK_LABELS = {t("c_menu_feedback", lang) for lang in LANGS}
+_CANCEL_LABELS = {t("btn_cancel", lang) for lang in LANGS}
+
+
+def _feedback_history_text(items, lang: str) -> str | None:
+    """Kuryerning oldingi takliflari ro'yxati (bo'sh bo'lsa None)."""
+    if not items:
+        return None
+    lines = [t("feedback_history_title", lang)]
+    for f in items:
+        lines.append(f"• {fmt_date(f.created_at)} — {f.text}")
+    return "\n".join(lines)
 
 
 async def _lang_of(tg_id: int, state: FSMContext) -> str:
@@ -369,6 +396,47 @@ async def show_profile(message: Message):
         ),
         reply_markup=_main_menu_kb(lang),
     )
+
+
+# --------------------------- talab va takliflar ---------------------------
+
+@router.message(StateFilter(None), F.text.in_(_FEEDBACK_LABELS))
+async def feedback_open(message: Message, state: FSMContext):
+    """Kuryer «Talab va takliflar» tugmasini bosdi — oldingilar + yangi so'rov."""
+    courier = await svc.get_courier_by_tg(message.from_user.id)
+    if not courier:
+        await message.answer(t("c_welcome", DEFAULT_LANG))
+        return
+    lang = courier.lang or DEFAULT_LANG
+    history = _feedback_history_text(
+        await svc.list_party_feedback("courier", courier.id), lang
+    )
+    if history:
+        await message.answer(history)
+    await message.answer(t("feedback_ask", lang), reply_markup=_feedback_cancel_kb(lang))
+    await state.set_state(Feedback.text)
+
+
+@router.message(Feedback.text)
+async def feedback_text(message: Message, state: FSMContext):
+    courier = await svc.get_courier_by_tg(message.from_user.id)
+    lang = courier.lang if courier and courier.lang else DEFAULT_LANG
+    if message.text in _CANCEL_LABELS:
+        await state.clear()
+        await message.answer(t("c_greet", lang).format(name=courier.name if courier else ""),
+                             reply_markup=_main_menu_kb(lang))
+        return
+    text = (message.text or "").strip()
+    if not text or not courier:
+        await message.answer(t("feedback_ask", lang), reply_markup=_feedback_cancel_kb(lang))
+        return
+    await svc.add_feedback("courier", courier.id, text)
+    events.publish(
+        "feedback",
+        {"courier_id": courier.id, "name": courier.name, "preview": text[:80]},
+    )
+    await state.clear()
+    await message.answer(t("feedback_sent", lang), reply_markup=_main_menu_kb(lang))
 
 
 # --------------------------- admin bilan chat ---------------------------

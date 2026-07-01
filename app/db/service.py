@@ -1128,12 +1128,19 @@ async def delete_operator(admin_id: int) -> bool:
 
 # ============================ TALAB VA TAKLIFLAR (FEEDBACK) ============================
 
-async def add_feedback(user_id: int, text: str) -> Feedback | None:
+async def add_feedback(party_kind: str, party_id: int, text: str) -> Feedback | None:
+    """Talab/taklifni saqlaydi. `party_kind`: 'client' yoki 'courier'."""
     text = (text or "").strip()
     if not text:
         return None
+    party_kind = party_kind if party_kind in ("client", "courier") else "client"
     async with SessionLocal() as s:
-        fb = Feedback(user_id=user_id, text=text)
+        fb = Feedback(
+            party_kind=party_kind,
+            user_id=party_id if party_kind == "client" else None,
+            courier_id=party_id if party_kind == "courier" else None,
+            text=text,
+        )
         s.add(fb)
         await s.commit()
         await s.refresh(fb)
@@ -1141,26 +1148,49 @@ async def add_feedback(user_id: int, text: str) -> Feedback | None:
 
 
 async def list_feedback(limit: int = 200) -> list[dict]:
-    """Fikrlar ro'yxati (yangi avval) — mijoz ma'lumotlari bilan."""
+    """Fikrlar ro'yxati (yangi avval) — mijoz/kuryer ma'lumotlari bilan."""
     async with SessionLocal() as s:
         res = await s.execute(
             select(Feedback)
-            .options(selectinload(Feedback.user))
+            .options(selectinload(Feedback.user), selectinload(Feedback.courier))
             .order_by(Feedback.created_at.desc())
             .limit(limit)
         )
         rows = res.scalars().all()
-    return [
-        {
-            "id": f.id,
-            "text": f.text,
-            "is_read": f.is_read,
-            "created_at": f.created_at,
-            "name": f.user.full_name if f.user else "—",
-            "phone": f.user.phone if f.user else "—",
-        }
-        for f in rows
-    ]
+    out = []
+    for f in rows:
+        if f.party_kind == "courier":
+            name = f.courier.name if f.courier else "—"
+            phone = f.courier.phone if f.courier else "—"
+        else:
+            name = f.user.full_name if f.user else "—"
+            phone = f.user.phone if f.user else "—"
+        out.append(
+            {
+                "id": f.id,
+                "text": f.text,
+                "is_read": f.is_read,
+                "created_at": f.created_at,
+                "source": f.party_kind,  # 'client' | 'courier'
+                "name": name,
+                "phone": phone,
+            }
+        )
+    return out
+
+
+async def list_party_feedback(party_kind: str, party_id: int, limit: int = 10) -> list[Feedback]:
+    """Bir mijoz/kuryerning o'z takliflari (botda ko'rsatish uchun) — yangi avval."""
+    party_kind = party_kind if party_kind in ("client", "courier") else "client"
+    col = Feedback.courier_id if party_kind == "courier" else Feedback.user_id
+    async with SessionLocal() as s:
+        res = await s.execute(
+            select(Feedback)
+            .where(Feedback.party_kind == party_kind, col == party_id)
+            .order_by(Feedback.created_at.desc())
+            .limit(limit)
+        )
+        return list(res.scalars().all())
 
 
 async def feedback_unread_count() -> int:
